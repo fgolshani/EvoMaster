@@ -635,4 +635,5 @@ class EMConfig {
         FEED_BACK
     }
 
+    var customNaming = false
 }
