@@ -2,10 +2,15 @@ package org.evomaster.core.search.impact
 
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.Individual
-import org.evomaster.core.search.gene.DisruptiveGene
 import org.evomaster.core.search.gene.Gene
-import org.evomaster.core.search.gene.OptionalGene
 
+/**
+ * @property id of impact, always refer to Gene of Action or structure of individual
+ * @property degree of the impact
+ * @property timesToManipulate presents how many times the element is manipulated
+ * @property timesOfImpact presents how many times the change of the element (i.e., Gene, structure of individual) impacts the [Archive]
+ * @property timesOfNoImpacts presents how many times the change of the element (i.e., Gene, structure of individual) did not impact the [Archive]
+ */
 open class Impact (
         val id : String,
         var degree: Double,
@@ -35,71 +40,27 @@ open class Impact (
     private fun resetCounter(){
         counter = 0
     }
-
-
 }
 
-class ImpactOfGene:Impact{
-    companion object {
-        const val SEPARATOR_ACTION_TO_GENE = "::"
-
-        fun generateId(action: Action, gene : Gene) : String = "${action.getName()}$SEPARATOR_ACTION_TO_GENE${gene.name}"
-
-        /*
-            LinearIndividual
-         */
-        fun generateId(gene: Gene) : String = geneId(gene)
-
-        fun extractGeneById(actions: List<Action>, id: String) : MutableList<Gene> {
-            val names = id.split(SEPARATOR_ACTION_TO_GENE)
-            assert(names.size == 2)
-            return actions.filter { it.getName() == names[0] }.flatMap { it.seeGenes() }.filter { it.name == names[1] }.toMutableList()
-        }
-
-        fun isAnyChange(geneA : Gene, geneB : Gene) : Boolean{
-            assert(geneA::class.java.simpleName == geneB::class.java.simpleName)
-            return geneA.getValueAsRawString() == geneB.getValueAsRawString()
-        }
-
-        fun geneId(gene: Gene):String{
-            return when(gene){
-                is DisruptiveGene<*> -> gene.name + SEPARATOR_ACTION_TO_GENE + geneId(gene.gene)
-                is OptionalGene -> gene.name + SEPARATOR_ACTION_TO_GENE + geneId(gene.gene)
-                else -> gene.name
-            }
-        }
-
-
-    }
-
-    constructor(id: String, degree: Double, timesToManipulate: Int,timesOfImpact: Int,timesOfNoImpacts: Int, counter: Int) : super(id, degree, timesToManipulate, timesOfImpact, timesOfNoImpacts, counter)
-
-    constructor(id: String, degree: Double) : this(id, degree, 0, 0, 0, 0)
-
-    constructor(action: Action, gene : Gene, degree: Double): this("${action.getName()}$SEPARATOR_ACTION_TO_GENE${gene.name}", degree)
-
-
-    override fun copy():ImpactOfGene{
-        return ImpactOfGene(id, degree, timesToManipulate, timesOfImpact, timesOfNoImpacts, counter)
-    }
-
-
-
+class ImpactOfGene (
+        id: String,
+        degree: Double,
+        timesToManipulate: Int = 0,
+        timesOfImpact: Int = 0,
+        timesOfNoImpacts: Int =0,
+        counter: Int = 0
+):Impact( id, degree, timesToManipulate, timesOfImpact, timesOfNoImpacts, counter){
+    constructor(action: Action, gene : Gene, degree: Double) : this(ImpactUtil.generateId(action, gene), degree)
 }
 
-class ImpactOfStructure :Impact{
 
-    companion object {
-        const val SEPARATOR_ACTION = ";"
-        fun generateId(individual: Individual) : String = individual.seeActions().map { it.getName() }.joinToString(SEPARATOR_ACTION)
-
-    }
-
-    constructor(id: String, degree: Double, timesToManipulate: Int,timesOfImpact: Int,timesOfNoImpacts: Int, counter: Int) : super(id, degree, timesToManipulate, timesOfImpact, timesOfNoImpacts, counter)
-    constructor(id: String, degree: Double) : this(id, degree, 0, 0, 0, 0)
-    constructor(individual: Individual, degree: Double)  : this(individual.seeActions().map { it.getName() }.joinToString(SEPARATOR_ACTION), degree)
-
-    override fun copy():ImpactOfStructure{
-        return ImpactOfStructure(id, degree, timesToManipulate, timesOfImpact, timesOfNoImpacts,counter)
-    }
+class ImpactOfStructure (
+        id: String,
+        degree: Double,
+        timesToManipulate: Int = 0,
+        timesOfImpact: Int = 0 ,
+        timesOfNoImpacts: Int =0,
+        counter: Int = 0
+) :Impact (id, degree, timesToManipulate, timesOfImpact, timesOfNoImpacts, counter){
+    constructor(individual: Individual, degree: Double) : this(ImpactUtil.generateId(individual), degree)
 }

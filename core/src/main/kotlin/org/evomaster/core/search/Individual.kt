@@ -1,6 +1,7 @@
 package org.evomaster.core.search
 
 import org.evomaster.core.search.gene.Gene
+import org.evomaster.core.search.impact.ImpactUtil
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.tracer.TraceableElement
 import org.evomaster.core.search.tracer.TrackOperator
@@ -76,5 +77,12 @@ abstract class Individual (trackOperator: TrackOperator? = null, traces : Mutabl
      * test after this method is invoked.
      */
     abstract fun repairInitializationActions(randomness: Randomness);
+
+    /**
+     *
+     */
+    open fun seeGenesIdMap() : Map<Gene, String>{
+        return seeActions().flatMap { a -> a.seeGenes().map { it to ImpactUtil.generateId(a, it)}}.toMap()
+    }
 }
 

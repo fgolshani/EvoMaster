@@ -94,8 +94,17 @@ abstract class Mutator<T> : TrackOperator where T : Individual {
 
             if (reachNew || !current.fitness.subsumes(mutated.fitness, targets)) {
                 val trackedMutated = if(config.enableTrackEvaluatedIndividual) trackedCurrent.next(this, mutated)!! else mutated
+
+                if(config.probOfArchiveMutation > 0.0)
+                    trackedMutated.updateImpactOfGenes(true)
+
                 archive.addIfNeeded(trackedMutated)
                 current = trackedMutated
+            }else{
+                if(config.probOfArchiveMutation > 0.0){
+                    trackedCurrent.getUndoTrack()!!.add(mutated)
+                    trackedCurrent.updateImpactOfGenes(false)
+                }
             }
         }
         return current

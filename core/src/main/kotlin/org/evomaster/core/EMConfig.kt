@@ -606,4 +606,25 @@ class EMConfig {
     @Cfg("Whether show target info")
     var showTarget = true
 
+    @Experimental
+    @Cfg("Specify a probability to enable archive-based mutation")
+    @Min(0.0) @Max(1.0)
+    var probOfArchiveMutation = 0.0
+
+    @Experimental
+    @Cfg("Specify a percentage to prepare candidates of genes to mutate")
+    @Min(0.0) @Max(1.0)
+    var perOfCandidateGenesToMutate = 0.1
+
+    @Experimental
+    @Cfg("Specify whether to enable archive-based mutation")
+    var geneSelectionMethod = GeneSelectionMethod.NONE
+
+    enum class GeneSelectionMethod {
+        NONE,
+        AWAY_BAD,
+        APPROACH_GOOD,
+        FEED_BACK
+    }
+
 }
