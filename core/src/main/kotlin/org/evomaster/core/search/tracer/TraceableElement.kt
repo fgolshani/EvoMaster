@@ -10,7 +10,7 @@ package org.evomaster.core.search.tracer
 abstract class TraceableElement(
         val trackOperator: TrackOperator? = null,
         private val track : MutableList<out TraceableElement>? = null,
-        val undoTrack : MutableList<out TraceableElement>? = null
+        private val undoTrack : MutableList<out TraceableElement>? = null
 ) {
 
     open fun isRoot() : Boolean{
@@ -40,5 +40,6 @@ abstract class TraceableElement(
 
     abstract fun copy(withTrack : Boolean) : TraceableElement
 
+    open fun getUndoTrack() : MutableList<out TraceableElement>? = undoTrack
 
 }
