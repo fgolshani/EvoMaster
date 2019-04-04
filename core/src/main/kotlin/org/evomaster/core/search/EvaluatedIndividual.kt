@@ -23,7 +23,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                              val results: List<out ActionResult>,
                              trackOperator: TrackOperator? = null,
                              track : MutableList<EvaluatedIndividual<T>>? = null,
-                             undoTack : MutableList<EvaluatedIndividual<T>>? = null)
+                             private val undoTack : MutableList<EvaluatedIndividual<T>>? = null)
     : TraceableElement(trackOperator,  track, undoTack) where T : Individual {
 
     init{
@@ -289,7 +289,8 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     }
 
     override fun getUndoTrack(): MutableList<EvaluatedIndividual<T>>? {
-        return getUndoTrack() as MutableList<EvaluatedIndividual<T>>
+        undoTack?: return null
+        return undoTack
     }
 
 }
