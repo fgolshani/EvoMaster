@@ -569,6 +569,10 @@ class EMConfig {
     }
 
     @Experimental
+    @Cfg("Enable custom naming and sorting criteria")
+    var customNaming = false
+
+    @Experimental
     @Cfg("Specify whether to enable resource-based strategy to sample an individual during search. " +
             "Note that resource-based sampling is only applicable for REST problem with MIO algorithm.")
     var resourceSampleStrategy = ResourceSamplingStrategy.NONE
@@ -634,6 +638,4 @@ class EMConfig {
         APPROACH_GOOD,
         FEED_BACK
     }
-
-    var customNaming = false
 }
