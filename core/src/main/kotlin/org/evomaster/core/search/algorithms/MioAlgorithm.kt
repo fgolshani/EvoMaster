@@ -1,6 +1,7 @@
 package org.evomaster.core.search.algorithms
 
 import org.evomaster.core.EMConfig
+import org.evomaster.core.problem.rest.resource.service.ResourceRestSampler
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.Solution
 import org.evomaster.core.search.service.SearchAlgorithm
@@ -13,7 +14,6 @@ class MioAlgorithm<T> : SearchAlgorithm<T>() where T : Individual {
     override fun getType(): EMConfig.Algorithm {
         return EMConfig.Algorithm.MIO
     }
-
 
     override fun search(): Solution<T> {
 
@@ -35,8 +35,15 @@ class MioAlgorithm<T> : SearchAlgorithm<T>() where T : Individual {
                     sampler.sample()
                 }
 
-                ff.calculateCoverage(ind)?.run { archive.addIfNeeded(this) }
+                ff.calculateCoverage(ind)?.run {
+                    archive.addIfNeeded(this)
 
+                    //archive feedback regarding a sampled individual
+                    if(config.resourceSampleStrategy.requiredArchive && sampler is ResourceRestSampler){
+                        (sampler as ResourceRestSampler).feedback(this)
+                    }
+
+                }
                 continue
             }
 

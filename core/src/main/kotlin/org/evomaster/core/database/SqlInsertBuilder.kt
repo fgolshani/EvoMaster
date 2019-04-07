@@ -1,5 +1,6 @@
 package org.evomaster.core.database
 
+import org.evomaster.client.java.controller.api.dto.database.operations.DataRowDto
 import org.evomaster.client.java.controller.api.dto.database.operations.DatabaseCommandDto
 import org.evomaster.client.java.controller.api.dto.database.operations.QueryResultDto
 import org.evomaster.client.java.controller.api.dto.database.schema.DatabaseType
@@ -8,7 +9,8 @@ import org.evomaster.core.database.schema.Column
 import org.evomaster.core.database.schema.ColumnDataType
 import org.evomaster.core.database.schema.ForeignKey
 import org.evomaster.core.database.schema.Table
-import org.evomaster.core.remote.service.RemoteController
+import org.evomaster.core.problem.rest.resource.db.SQLGenerator
+import org.evomaster.core.problem.rest.resource.db.SQLKey
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.ImmutableDataHolderGene
 import org.evomaster.core.search.gene.SqlPrimaryKeyGene
@@ -248,4 +250,152 @@ class SqlInsertBuilder(
 
         return list
     }
+
+
+    /**
+     * the function is used to execute a select sql constrained by specified [pkValues]
+     * @return DbAction has all values of columns in the row regarding [pkValues]
+     *
+     * Note that [pkValues] only points to one row.
+     */
+    fun extractExistingByCols(tableName: String, pkValues : DataRowDto): DbAction{
+
+        if(dbExecutor == null){
+            throw IllegalStateException("No Database Executor registered for this object")
+        }
+
+        val table = tables[tableName]!!
+
+        val pks = table.columns.filter { it.primaryKey }
+        val cols = table.columns.toList()
+
+        var row : DataRowDto? = null
+        if(pks.isNotEmpty()){
+
+
+            val condition = SQLGenerator.composeAndConditions(
+                    SQLGenerator.genConditions(
+                            pks.map { it.name }.toTypedArray(),
+                            pkValues.columnData,
+                            table)
+            )
+
+            val sql = SQLGenerator.genSelect(cols.map { it.name }.toTypedArray(),table, condition)
+
+            val dto = DatabaseCommandDto()
+            dto.command = sql
+
+            val result : QueryResultDto = dbExecutor.executeDatabaseCommandAndGetResults(dto)
+                    ?: throw IllegalArgumentException("rows regarding pks can not be found")
+            if(result.rows.size != 1){
+                throw IllegalArgumentException("the size of rows regarding pks is ${result.rows.size}, and except is 1")
+            }
+            row = result.rows.first()
+        }else
+            row = pkValues
+
+
+        val id = counter++
+
+        val genes = mutableListOf<Gene>()
+
+        for(i in 0 until cols.size){
+
+            if(row!!.columnData[i] != "NULL"){
+
+                val colName= cols[i].name
+                val inQuotes = cols[i].type.shouldBePrintedInQuotes()
+
+                val gene = if(cols[i].primaryKey){
+                    SqlPrimaryKeyGene(colName, table.name, ImmutableDataHolderGene(colName, row!!.columnData[i], inQuotes), id)
+                }else{
+                    ImmutableDataHolderGene(colName, row!!.columnData[i], inQuotes)
+                }
+                genes.add(gene)
+            }
+        }
+
+        return DbAction(table, pks.toSet(), id, genes, true)
+
+    }
+
+    /**
+     * @return a list of sql insertion, and each of insertion includes all columns of the table.
+     *
+     * Note that the function is quite similar with [createSqlInsertionAction], we may add some variables
+     *      to insert an row with all columns into a reference table (by FK)
+     */
+    fun createSqlInsertionActionWithAllColumn(tableName: String): List<DbAction> {
+
+        val table = getTable(tableName)
+        val columnNames = table.columns.map { it.name }.toSet()
+
+        val takeAll = columnNames.contains("*")
+
+        if (takeAll && columnNames.size > 1) {
+            throw IllegalArgumentException("Invalid column description: more than one entry when using '*'")
+        }
+
+        for (cn in columnNames) {
+            if (cn != "*" && !table.columns.any { it.name == cn }) {
+                throw IllegalArgumentException("No column called $cn in table $tableName")
+            }
+        }
+
+        val selectedColumns = mutableSetOf<Column>()
+
+        for (c in table.columns) {
+            /*
+                we need to take primaryKey even if autoIncrement.
+                Point is, even if value will be set by DB, and so could skip it,
+                we would still need a non-modifiable, non-printable Gene to
+                store it, as we can have other Foreign Key genes pointing to it
+             */
+
+            if (takeAll || columnNames.contains(c.name) || !c.nullable || c.primaryKey) {
+                //TODO are there also other constraints to consider?
+                selectedColumns.add(c)
+            }
+        }
+
+        val insertion = DbAction(table, selectedColumns, counter++)
+        val actions = mutableListOf(insertion)
+
+        for (fk in table.foreignKeys) {
+            /*
+                Assumption: in a valid Schema, this should never end up
+                in a infinite loop?
+             */
+            val pre = createSqlInsertionActionWithAllColumn(fk.targetTable)
+            actions.addAll(0, pre)
+        }
+
+        return actions
+    }
+
+    /**
+     * get existing pks in db
+     */
+    fun extractExistingPKs(dataInDB : MutableMap<String, MutableList<DataRowDto>>){
+
+        if(dbExecutor == null){
+            throw IllegalStateException("No Database Executor registered for this object")
+        }
+
+        dataInDB.clear()
+
+        for(table in tables.values){
+            val pks = table.columns.filter { it.primaryKey }
+            val selected = if(pks.isEmpty()) SQLKey.ALL.key else pks.map { it.name }.joinToString(",")
+            val sql = "SELECT $selected FROM ${table.name}"
+
+            val dto = DatabaseCommandDto()
+            dto.command = sql
+
+            val result : QueryResultDto = dbExecutor.executeDatabaseCommandAndGetResults(dto)
+                    ?: continue
+            dataInDB.getOrPut(table.name){ result.rows.map { it }.toMutableList()}
+        }
+    }
+
 }

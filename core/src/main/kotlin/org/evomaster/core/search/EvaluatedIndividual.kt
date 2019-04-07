@@ -30,6 +30,10 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         }
     }
 
+    /**
+     * [hasImprovement] represents if [this] helps to improve Archive, e.g., reach new target.
+     */
+    var hasImprovement = false
 
     fun copy(): EvaluatedIndividual<T> {
         return EvaluatedIndividual(

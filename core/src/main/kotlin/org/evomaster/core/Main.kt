@@ -12,6 +12,8 @@ import org.evomaster.core.AnsiColor.Companion.inYellow
 import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.output.service.TestSuiteWriter
 import org.evomaster.core.problem.rest.RestIndividual
+import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
+import org.evomaster.core.problem.rest.resource.RestModuleII
 import org.evomaster.core.problem.rest.service.RestModule
 import org.evomaster.core.problem.web.service.WebModule
 import org.evomaster.core.remote.NoRemoteConnectionException
@@ -167,7 +169,7 @@ class Main {
             val problemType = base.getEMConfig().problemType
 
             val problemModule = when (problemType) {
-                EMConfig.ProblemType.REST -> RestModule()
+                EMConfig.ProblemType.REST -> if(base.getEMConfig().resourceSampleStrategy != EMConfig.ResourceSamplingStrategy.NONE) RestModuleII() else RestModule()
                 EMConfig.ProblemType.WEB -> WebModule()
                 //this should never happen, unless we add new type and forget to add it here
                 else -> throw IllegalStateException("Unrecognized problem type: $problemType")
@@ -202,10 +204,13 @@ class Main {
 
             val config = injector.getInstance(EMConfig::class.java)
 
-
             val key = when (config.algorithm) {
-                EMConfig.Algorithm.MIO -> Key.get(
-                        object : TypeLiteral<MioAlgorithm<RestIndividual>>() {})
+                EMConfig.Algorithm.MIO -> {
+                    if(config.resourceSampleStrategy != EMConfig.ResourceSamplingStrategy.NONE)Key.get(
+                            object : TypeLiteral<MioAlgorithm<ResourceRestIndividual>>() {})
+                    else Key.get(
+                            object : TypeLiteral<MioAlgorithm<RestIndividual>>() {})
+                }
                 EMConfig.Algorithm.RANDOM -> Key.get(
                         object : TypeLiteral<RandomAlgorithm<RestIndividual>>() {})
                 EMConfig.Algorithm.WTS -> Key.get(

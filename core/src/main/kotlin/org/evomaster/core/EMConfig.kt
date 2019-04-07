@@ -245,6 +245,9 @@ class EMConfig {
             throw IllegalArgumentException("When tracking EvaluatedIndividual, it is not necessary to track individual")
         }
 
+        if(resourceSampleStrategy != ResourceSamplingStrategy.NONE && (algorithm != Algorithm.MIO || problemType != ProblemType.REST)){
+            throw IllegalArgumentException("Resource-based sampling is only applicable for REST problem with MIO algorithm")
+        }
     }
 
     fun shouldGenerateSqlData() = generateSqlDataWithDSE || generateSqlDataWithSearch
@@ -529,14 +532,78 @@ class EMConfig {
             "Note that we enforced that set enableTrackIndividual false when enableTrackEvaluatedIndividual is true since information of individual is part of evaluated individual")
     var enableTrackEvaluatedIndividual = false
 
+    enum class ResourceSamplingStrategy (val requiredArchive : Boolean = false){
+        NONE,
+        /**
+         * probability for applicable strategy is specified
+         */
+        Customized,
+        /**
+         * probability for applicable strategy is equal
+         */
+        EqualProbability,
+        /**
+         * probability for applicable strategy is derived based on actions
+         */
+        Actions,
+        /**
+         * probability for applicable strategy is adaptive with time
+         */
+        TimeBudgets,
+        /**
+         * probability for applicable strategy is adaptive with performance, i.e., Archive
+         */
+        Archive (true),
+        /**
+         * probability for applicable strategy is adaptive with performance, i.e., Archive
+         */
+        ConArchive (true)
+    }
 
     @Experimental
-    @Cfg("Enable custom naming and sorting criteria")
-    var customNaming = false
+    @Cfg("Specify whether to enable resource-based strategy to sample an individual during search. " +
+            "Note that resource-based sampling is only applicable for REST problem with MIO algorithm.")
+    var resourceSampleStrategy = ResourceSamplingStrategy.NONE
 
-    /*
-        You need to decode it if you want to know what is says...
-     */
-    @Cfg("QWN0aXZhdGUgdGhlIFVuaWNvcm4gTW9kZQ==")
-    var e_u1f984 = false
+    @Experimental
+    @Cfg("Specify whether to enable resource dependency heuristics, i.e, probOfEnablingResourceDependencyHeuristics > 0.0. " +
+            "Note that the option is available to be enabled only if resource-based smart sampling is enable. " +
+            "This option has an effect on sampling multiple resources and mutating a structure of an individual.")
+    var probOfEnablingResourceDependencyHeuristics = 0.0
+
+    @Experimental
+    @Cfg("Whether to involve db when applying resource-based methods, e.g., resource-based sampling.")
+    var doesInvolveDB = false
+
+    @Experimental
+    @Cfg("Specify a minimal number of rows in a table")
+    var minRowOfTable = 10
+
+    @Experimental
+    @Cfg("Specify a probability that enables selection of data from db instead of insertion")
+    @Min(0.0) @Max(1.0)
+    var probOfSelectFromDB = 0.1
+
+    @Experimental
+    @Cfg("Specify a probability to apply S1iR when sample control is Customized")
+    @Min(0.0)@Max(1.0)
+    var S1iR : Double = 0.25
+    @Experimental
+    @Cfg("Specify a probability to apply S1dR when sample control is Customized")
+    @Min(0.0)@Max(1.0)
+    var S1dR : Double = 0.25
+    @Experimental
+    @Cfg("Specify a probability to apply S2dR when sample control is Customized")
+    @Min(0.0)@Max(1.0)
+    var S2dR : Double = 0.25
+    @Experimental
+    @Cfg("Specify a probability to apply SMdR when sample control is Customized")
+    @Min(0.0)@Max(1.0)
+    var SMdR : Double = 0.25
+
+
+    @Experimental
+    @Cfg("Whether show target info")
+    var showTarget = true
+
 }
