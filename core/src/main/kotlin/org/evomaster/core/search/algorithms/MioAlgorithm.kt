@@ -15,6 +15,7 @@ class MioAlgorithm<T> : SearchAlgorithm<T>() where T : Individual {
         return EMConfig.Algorithm.MIO
     }
 
+
     override fun search(): Solution<T> {
 
         time.startSearch()

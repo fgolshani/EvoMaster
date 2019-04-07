@@ -48,6 +48,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     val impactsOfStructure : MutableMap<String, ImpactOfStructure> = mutableMapOf()
 
     val reachedTargets : MutableMap<Int, Double> = mutableMapOf()
+
     /**
      * [hasImprovement] represents if [this] helps to improve Archive, e.g., reach new target.
      */
