@@ -36,6 +36,10 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     }
 
     /**
+     * [hasImprovement] represents if [this] helps to improve Archive, e.g., reach new target.
+     */
+    var hasImprovement = false
+    /**
      * key -> action name : gene name
      * value -> impact degree
      */
