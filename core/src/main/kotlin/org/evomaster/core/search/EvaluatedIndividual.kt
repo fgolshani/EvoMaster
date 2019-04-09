@@ -10,7 +10,7 @@ import org.evomaster.core.search.tracer.TrackOperator
 import kotlin.math.absoluteValue
 
 /**
- * EvaluatedIndividual allows to track its evolution.
+ * EvaluatedIndividual allows to tracking its evolution.
  * Note that tracking EvaluatedIndividual can be enabled by set EMConfig.enableTrackEvaluatedIndividual true.
  */
 class EvaluatedIndividual<T>(val fitness: FitnessValue,
@@ -35,10 +35,6 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         }
     }
 
-    /**
-     * [hasImprovement] represents if [this] helps to improve Archive, e.g., reach new target.
-     */
-    var hasImprovement = false
     /**
      * key -> action name : gene name
      * value -> impact degree
