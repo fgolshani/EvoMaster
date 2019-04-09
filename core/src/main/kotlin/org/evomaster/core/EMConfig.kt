@@ -645,4 +645,7 @@ class EMConfig {
         APPROACH_GOOD,
         FEED_BACK
     }
+
+    @Cfg("QWN0aXZhdGUgdGhlIFVuaWNvcm4gTW9kZQ==")
+    var e_u1f984 = false
 }
