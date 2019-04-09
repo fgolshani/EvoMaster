@@ -84,7 +84,7 @@ class RestIndividual (
     }
 
     override fun next(trackOperator: TrackOperator) : TraceableElement?{
-        getTrack()?:return RestIndividual(
+        getTracking()?:return RestIndividual(
                     actions.map { a -> a.copy() as RestAction } as MutableList<RestAction>,
                     sampleType,
                     dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
@@ -96,7 +96,7 @@ class RestIndividual (
                 dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
                 usedObjects,
                 trackOperator,
-                getTrack()!!.plus(this).map { (it as RestIndividual).copy() as RestIndividual }.toMutableList()
+                getTracking()!!.plus(this).map { (it as RestIndividual).copy() as RestIndividual }.toMutableList()
         )
     }
 
@@ -104,14 +104,14 @@ class RestIndividual (
         when(withTrack){
             false-> return copy() as RestIndividual
             else ->{
-                getTrack()?:return copy() as RestIndividual
+                getTracking()?:return copy() as RestIndividual
                 return RestIndividual(
                         actions.map { a -> a.copy() as RestAction } as MutableList<RestAction>,
                         sampleType,
                         dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
                         usedObjects,
                         trackOperator!!,
-                        getTrack()!!.map { (it as RestIndividual).copy() as RestIndividual }.toMutableList()
+                        getTracking()!!.map { (it as RestIndividual).copy() as RestIndividual }.toMutableList()
                 )
             }
         }

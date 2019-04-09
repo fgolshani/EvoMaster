@@ -14,8 +14,6 @@ import org.evomaster.core.problem.rest.auth.AuthenticationInfo
 import org.evomaster.core.problem.rest.auth.NoAuth
 import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
 import org.evomaster.core.problem.rest.resource.model.RestResourceCalls
-import org.evomaster.core.problem.rest.resource.service.ResourceManageService
-import org.evomaster.core.problem.rest.resource.service.SmartSamplingController
 import org.evomaster.core.problem.rest.service.RestSampler
 import org.evomaster.core.remote.SutProblemException
 import org.evomaster.core.remote.service.RemoteController
@@ -111,7 +109,6 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
         }
 
         log.debug("Done initializing {}", ResourceRestSampler::class.simpleName)
-
     }
 
 
@@ -272,10 +269,6 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
             }
         }
 
-//        val dependencies = if(withDependency && restCalls.size > 1)
-//                                restCalls.map { it.resource.ar.path.toString() }.toHashSet()
-//                        else mutableSetOf<String>()
-
         if (!restCalls.isEmpty()) {
             return if(config.enableTrackIndividual || config.enableTrackEvaluatedIndividual){
                 ResourceRestIndividual(restCalls,SampleType.SMART_RESOURCE, trackOperator = this,
@@ -327,7 +320,7 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
         val skiped = rm.getResourceCluster().filter { r -> !r.value.isAnyAction() }.keys
         val candidates = samplingComResourceCounter.filterNot{ r-> r.key.split(separatorResources).any{ir-> skiped.contains(ir)} }
         if(candidates.isEmpty())
-            throw java.lang.IllegalStateException("there is no any com-resource available")
+            throw IllegalStateException("there is no any com-resource available")
         return randomness.choose(candidates.keys)
 
     }
@@ -385,14 +378,10 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
 
     private fun sampleRandomComResource(resourceCalls: MutableList<RestResourceCalls>){
         val keys = selectAComResource(randomness)
-        //samplingComResourceCounter.getValue(keys).plus(1)
         var size = config.maxTestSize
         var num = 0
         for (key in keys.split(separatorResources)){
-            //val temp = rm.getResourceCluster().getValue(key)
-            //resourceCalls.add(temp.sampleRestResourceCalls(randomness, size))
             rm.sampleCall(key, true, resourceCalls, config.maxTestSize)
-            //samplingResourceCounter.getValue(key).plus(1)
             size -= resourceCalls.last().actions.size
             num++
         }
@@ -406,7 +395,6 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
         while(size > 1 && executed.size < candR.size){
             val key = randomness.choose(candR.keys.filter { !executed.contains(it) })
             rm.sampleCall(key, true, resourceCalls, config.maxTestSize)
-            //resourceCalls.add(candR.getValue(key).sampleRestResourceCalls(randomness, size))
             size -= resourceCalls.last().actions.size
             executed.add(key)
             num++

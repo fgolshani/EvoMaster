@@ -189,7 +189,7 @@ class ResourceManageService {
         //GET, PATCH, DELETE
         sortedResources.forEach { ar->
             ar.actions.filter { it is RestCallAction && it.verb != HttpVerb.POST && it.verb != HttpVerb.PUT }.forEach {a->
-                val call = ar.sampleOneAction(a.copy() as RestAction, randomness)
+                val call = ar.sampleOneAction(a.copy() as RestAction, randomness, config.maxTestSize)
                 call.actions.forEach {a->
                     if(a is RestCallAction) a.auth = auth
                 }
@@ -200,7 +200,7 @@ class ResourceManageService {
         //all POST with one post action
         sortedResources.forEach { ar->
             ar.actions.filter { it is RestCallAction && it.verb == HttpVerb.POST}.forEach { a->
-                val call = ar.sampleOneAction(a.copy() as RestAction, randomness)
+                val call = ar.sampleOneAction(a.copy() as RestAction, randomness, config.maxTestSize)
                 call.actions.forEach { (it as RestCallAction).auth = auth }
                 adHocInitialIndividuals.add(ResourceRestIndividual(mutableListOf(call), SampleType.SMART_RESOURCE))
             }
@@ -722,5 +722,4 @@ class ResourceManageService {
 
         DbActionUtils.repairBrokenDbActionsList(dbActions, randomness)
     }
-
 }

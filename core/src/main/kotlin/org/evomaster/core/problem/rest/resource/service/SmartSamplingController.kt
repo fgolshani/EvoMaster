@@ -24,6 +24,9 @@ class SmartSamplingController {
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(SmartSamplingController::class.java)
+        private const val CONARCHIVE_THRESHOLD = 0.2
+        private const val TB_THRESHOLD = 0.5
+
     }
 
     private var selected : ResourceSamplingMethod? = null
@@ -192,7 +195,7 @@ class SmartSamplingController {
 
         val used = passed/threshold
         resetProbability()
-        if(used < 0.5){
+        if(used < TB_THRESHOLD){
             val one = ResourceSamplingMethod.values().filter { it.applicable && (it == ResourceSamplingMethod.S1iR || it == ResourceSamplingMethod.S1dR)}.size
             val two = ResourceSamplingMethod.values().filter { it.applicable}.size - one
             ResourceSamplingMethod.values().filter { it.applicable }.forEach { s->
@@ -237,7 +240,7 @@ class SmartSamplingController {
 
         val used = passed/threshold
         resetProbability()
-        if(used < 0.2){
+        if(used < CONARCHIVE_THRESHOLD){
             val one = ResourceSamplingMethod.values().filter { it.applicable && (it == ResourceSamplingMethod.S1iR || it == ResourceSamplingMethod.S1dR)}.size
             val two = ResourceSamplingMethod.values().filter { it.applicable}.size - one
             ResourceSamplingMethod.values().filter { it.applicable }.forEach { s->
@@ -299,7 +302,8 @@ class SmartSamplingController {
     }
 
     /**
-     * An implementation of randomness with specified probability. It is required a further modification
+     * An implementation of randomness with specified probability.
+     * TODO It is required a further modification
      */
     private fun randomWithProbability(array: Array<*>, arrayProb: Array<Double>) : Any?{
         if(array.size != arrayProb.size) return null
@@ -318,7 +322,6 @@ class SmartSamplingController {
             }
         }
         return result
-        //throw IllegalStateException("num does not fail into 1-$maxSample??")
     }
 
     private fun resetProbability(){

@@ -102,7 +102,7 @@ abstract class Mutator<T> : TrackOperator where T : Individual {
                 current = trackedMutated
             }else{
                 if(config.probOfArchiveMutation > 0.0){
-                    trackedCurrent.getUndoTrack()!!.add(mutated)
+                    trackedCurrent.getUndoTracking()!!.add(mutated)
                     trackedCurrent.updateImpactOfGenes(false)
                 }
             }

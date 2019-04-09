@@ -49,8 +49,9 @@ class ParamUtil {
             else{
                 if(numOfBodyParam(params) == params.size && params.isNotEmpty()){
                     bindBodyAndOther(params.first{ pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath,false, inner)
-                }else
-                    log.warn("cannot find PathParam ${p.name} in params ${params.mapNotNull { it.name }.joinToString(" ")}")
+                }
+//                else
+//                    log.warn("cannot find PathParam ${p.name} in params ${params.mapNotNull { it.name }.joinToString(" ")}")
             }
         }
 
@@ -63,8 +64,8 @@ class ParamUtil {
                     //p.gene.copyValueFrom(sg.gene)
                     copyWithTypeAdapter(p.gene, sg.gene)
                 }
-                else
-                    log.warn("cannot find QueryParam ${p.name} in params ${params.map { it.name }.joinToString(" ")}")
+//                else
+//                    log.warn("cannot find QueryParam ${p.name} in params ${params.map { it.name }.joinToString(" ")}")
             }
         }
 
@@ -110,12 +111,13 @@ class ParamUtil {
                     if(matched.isNotEmpty()){
                         val first = matched.first()
                         copyGene(bodyMap.getValue(first), pathGene, b2g)
-                    }else{
-                        if(inner){
-                            log.info("cannot find ${pathkey} in its bodyParam ${bodyMap.keys.joinToString(" ")}")
-                        }else
-                            log.warn("cannot find ${pathkey} in bodyParam ${bodyMap.keys.joinToString(" ")}")
                     }
+//                    else{
+//                        if(inner){
+//                            log.info("cannot find ${pathkey} in its bodyParam ${bodyMap.keys.joinToString(" ")}")
+//                        }else
+//                            log.warn("cannot find ${pathkey} in bodyParam ${bodyMap.keys.joinToString(" ")}")
+//                    }
                 }
             }
         }
@@ -148,7 +150,7 @@ class ParamUtil {
                 val result = if(b2g) copyWithTypeAdapter(b, g)
                             else copyWithTypeAdapter(g, b)
                 if(!result){
-                    log.info("$g fails to copy value from gene $g")
+                    log.info("{} fails to copy value from gene {}", g, g)
                 }
             }
         }

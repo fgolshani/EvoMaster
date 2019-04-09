@@ -38,7 +38,7 @@ class MioAlgorithm<T> : SearchAlgorithm<T>() where T : Individual {
                 ff.calculateCoverage(ind)?.run {
                     archive.addIfNeeded(this)
 
-                    //archive feedback regarding a sampled individual
+                    //feedback from archive to sampler
                     if(config.resourceSampleStrategy.requiredArchive && sampler is ResourceRestSampler){
                         (sampler as ResourceRestSampler).feedback(this)
                     }

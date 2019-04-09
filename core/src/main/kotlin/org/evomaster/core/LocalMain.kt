@@ -53,12 +53,11 @@ class LocalMain {
 
                     //"--showProgress", true.toString(),
                     "--maxTestSize", maxTestSize.toString() //dynamically control a size of test during a search
-
             );
         }
     }
 }
 
 fun main(args : Array<String>){
-    Main.main(LocalMain.getArgs("MIO", "scout-api",10002))
+    Main.main(LocalMain.getArgs("MIO", "catwatch",10003))
 }

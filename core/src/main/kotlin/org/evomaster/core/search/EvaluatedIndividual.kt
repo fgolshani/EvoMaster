@@ -92,7 +92,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 /**
                  * if the [getTrack] is null, which means the tracking option is attached on individual not evaluated individual
                  */
-                getTrack()?:return EvaluatedIndividual(
+                getTracking()?:return EvaluatedIndividual(
                         fitness.copy(),
                         individual.copy(withTrack) as T,
                         results.map(ActionResult::copy),
@@ -110,14 +110,14 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
                 individual.copy() as T,
                 results.map(ActionResult::copy),
                 trackOperator?:individual.trackOperator,
-                getTrack()?.map { (it as EvaluatedIndividual<T> ).copy() }?.toMutableList()?: mutableListOf(),
+                getTracking()?.map { (it as EvaluatedIndividual<T> ).copy() }?.toMutableList()?: mutableListOf(),
                 getUndoTracking()?.map { it.copy()}?.toMutableList()?: mutableListOf()
         )
     }
 
 
     override fun next(trackOperator: TrackOperator, next: TraceableElement): EvaluatedIndividual<T>? {
-        val copyTraces = getTrack()?.map { (it as EvaluatedIndividual<T> ).copy() }?.toMutableList()?: mutableListOf()
+        val copyTraces = getTracking()?.map { (it as EvaluatedIndividual<T> ).copy() }?.toMutableList()?: mutableListOf()
         copyTraces.add(this.copy())
         val copyUndoTraces = getUndoTracking()?.map {(it as EvaluatedIndividual<T>).copy()}?.toMutableList()?: mutableListOf()
 
@@ -138,7 +138,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
     }
 
     fun initImpacts(){
-        getTrack()?.apply {
+        getTracking()?.apply {
             assert(size == 0)
         }
         individual.seeActions().forEach { a->
@@ -157,7 +157,7 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
             }
         }
 
-        getTrack()?.apply {
+        getTracking()?.apply {
             assert(size == 0)
         }
 
@@ -175,14 +175,14 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
      * compare current with latest
      */
     fun updateImpactOfGenes(inTrack : Boolean){
-        assert(getTrack() != null)
-        assert(getUndoTrack() != null)
+        assert(getTracking() != null)
+        assert(getUndoTracking() != null)
 
-        if(inTrack) assert(getTrack()!!.isNotEmpty())
-        else assert(getUndoTrack()!!.isNotEmpty())
+        if(inTrack) assert(getTracking()!!.isNotEmpty())
+        else assert(getUndoTracking()!!.isNotEmpty())
 
-        val previous = if(inTrack) getTrack()!!.last() as EvaluatedIndividual<T> else this
-        val next = if(inTrack) this else getUndoTrack()!!.last() as EvaluatedIndividual<T>
+        val previous = if(inTrack) getTracking()!!.last() as EvaluatedIndividual<T> else this
+        val next = if(inTrack) this else getUndoTracking()!!.last()
 
         val isAnyOverallImprovement = updateReachedTargets(fitness)
         val comparedFitness = next.fitness.computeFitnessScore() - previous.fitness.computeFitnessScore()
@@ -299,9 +299,4 @@ class EvaluatedIndividual<T>(val fitness: FitnessValue,
         }
         return isAnyOverallImprovement
     }
-
-    override fun getUndoTrack(): MutableList<EvaluatedIndividual<T>>? {
-        return getUndoTrack() as MutableList<EvaluatedIndividual<T>>
-    }
-
 }

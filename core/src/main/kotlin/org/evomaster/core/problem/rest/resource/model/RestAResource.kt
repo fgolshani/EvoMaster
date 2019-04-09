@@ -265,12 +265,7 @@ class RestAResource {
         return sampleOneAction(al!!, randomness, maxTestSize)
     }
 
-    fun sampleOneAction(action : RestAction, randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
-        assert(maxTestSize > 0)
-        return sampleOneAction(action, randomness)
-    }
-
-    fun sampleOneAction(action : RestAction, randomness: Randomness) : RestResourceCalls{
+    fun sampleOneAction(action : RestAction, randomness: Randomness, maxTestSize: Int = 1) : RestResourceCalls{
         val copy = action.copy()
         randomizeActionGenes(copy as RestCallAction, randomness)
 
@@ -286,31 +281,6 @@ class RestAResource {
             call.status = RestResourceCalls.ResourceStatus.NOT_EXISTING
 
         return call
-    }
-
-    /**
-     * sample a sequence of actions according to a non-independent template selected at random
-     * if there does not exist non-independent template whose size < required size, use independent template
-     *
-     * to manipulate the resource, [postCreation] is prior to selection from db.
-     */
-    fun sampleRestResourceCalls(randomness: Randomness, maxTestSize: Int, allowDataFromDB: Boolean) : RestResourceCalls{
-        assert(maxTestSize > 0)
-        if(allowDataFromDB && randomness.nextBoolean(0.5)){
-            val chosen = templates.filter { it.value.size <= maxTestSize }
-            if(chosen.isNotEmpty())
-                return genCalls(randomness.choose(chosen).template,randomness, maxTestSize)
-        }
-        val chosen = templates.filter { !it.value.independent && it.value.size <= maxTestSize }
-        if(chosen.isEmpty())
-            return sampleIndResourceCall(randomness, maxTestSize)
-
-            val chosenWithPost = selectTemplate({call : CallsTemplate -> !call.independent && call.size <= maxTestSize}, randomness, chosen)
-            chosenWithPost?.let {
-                return genCalls(it.template,randomness, maxTestSize)
-            }
-            return sampleIndResourceCall(randomness, maxTestSize)
-
     }
 
     fun sampleAnyRestResourceCalls(randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
@@ -334,6 +304,7 @@ class RestAResource {
         return genCalls(template.template, randomness, maxTestSize)
     }
 
+    //TODO update postCreation accordingly
     fun genCalls(
             template : String,
             randomness: Randomness,
@@ -403,11 +374,12 @@ class RestAResource {
             }
         }
 
-        result.filterNot { ac -> skipBind.contains(ac) }.forEach { ac ->
-            if((ac as RestCallAction).parameters.isNotEmpty()){
-                ac.bindToSamePathResolution(ac.path, resource!!.params)
+        if(result.size > 1)
+            result.filterNot { ac -> skipBind.contains(ac) }.forEach { ac ->
+                if((ac as RestCallAction).parameters.isNotEmpty()){
+                    ac.bindToSamePathResolution(ac.path, resource!!.params)
+                }
             }
-        }
 
         assert(resource!=null)
         assert(result.isNotEmpty())
@@ -430,84 +402,15 @@ class RestAResource {
                 calls.status = RestResourceCalls.ResourceStatus.NOT_ENOUGH_LENGTH
             }
             -2 -> {
-                log.warn("cannot find the post action in this resource ${this.path} and its ancestor")
                 calls.status = RestResourceCalls.ResourceStatus.NOT_FOUND
             }
             -3 -> {
-                log.warn("cannot manipulate this resource ${this.path} due to failure to create dependent resource")
                 calls.status = RestResourceCalls.ResourceStatus.NOT_FOUND_DEPENDENT
             }
         }
 
         return calls
     }
-
-//    fun genCalls(
-//
-//            template : String,
-//            randomness: Randomness,
-//            maxTestSize : Int = 1,
-//            createResource : Boolean = true,
-//            additionalPatch : Boolean = true
-//
-//    ) : RestResourceCalls{
-//
-//        val callTemplate = templates[template]?:
-//            throw java.lang.IllegalArgumentException("$template does not exist in $path")
-//
-//        val result : MutableList<RestAction> = mutableListOf()
-//        var resource : RestResource? = null
-//
-//        val skipBind : MutableList<RestAction> = mutableListOf()
-//
-//        val ats = RTemplateHandler.parseTemplate(template)
-//
-////        if(createResource && ats[0] == HttpVerb.POST) {
-////            val nonPostIndex = ats.indexOfFirst { it != HttpVerb.POST }
-////            val ac = getActionByHttpVerb(actions, if (nonPostIndex == -1) HttpVerb.POST else ats[nonPostIndex])!!.copy() as RestCallAction
-////            randomizeActionGenes(ac, randomness)
-////            result.add(ac)
-////            var isCreated = createResourcesFor(ac, result, maxTestSize, randomness, false)
-////        }
-//        ats.forEachIndexed { index, httpVerb ->
-//            if(createResource && index == 0 && httpVerb == HttpVerb.POST){
-//                result.addAll(postCreation.actions.filter { it is RestCallAction }.map { it.copy() as RestAction })
-//                resource =  RestResource(this, (result.last() as RestCallAction).parameters)
-//                skipBind.addAll(result)
-//            }else{
-//                result.add(getActionByHttpVerb(actions,httpVerb)!!.copy() as RestAction)
-//            }
-//        }
-//
-//        result.forEach { randomizeActionGenes(it, randomness) }
-//
-//        if(resource == null){
-//            val action = chooseLongestPath(result, randomness)
-//            resource = RestResource(this, action.parameters)
-//            skipBind.add(action)
-//        }
-//
-//
-//        result.filter { !skipBind.contains(it) }.forEach { ac ->
-//            if((ac as RestCallAction).parameters.isNotEmpty()){
-//                ac.bindToSamePathResolution(ac.path, resource!!.params)
-//            }
-//        }
-//
-//        if(additionalPatch
-//                && !templates.getValue(template).independent
-//                && template.contains(HttpVerb.PATCH.toString())
-//                && result.size + 1 <= maxTestSize
-//                && randomness.nextBoolean(PROB_EXTRA_PATCH)
-//        ){
-//            val index = result.indexOfFirst { (it is RestCallAction) && it.verb == HttpVerb.PATCH }
-//            val copy = result.get(index).copy() as RestAction
-//            result.add(index, copy)
-//        }
-//        return RestResourceCalls(callTemplate, resource!!, result)
-//
-//    }
-
 
     private fun templateSelected(callsTemplate: CallsTemplate){
         if(countTempVisiting)
@@ -530,18 +433,6 @@ class RestAResource {
         return actions.find { a -> a is RestCallAction && a.verb == verb }
     }
 
-    private fun getActionByHttpVerbUntil(verb : HttpVerb) : RestAction? {
-        getActionByHttpVerb(actions, verb)?.let {
-            return it
-        }
-        ancestors.forEach {
-            getActionByHttpVerb(it.actions, verb)?.let {aa->
-                return aa
-            }
-        }
-        return null
-    }
-
     private fun chooseLongestPath(actions: List<RestAction>, randomness: Randomness? = null): RestCallAction {
 
         if (actions.isEmpty()) {
@@ -558,7 +449,6 @@ class RestAResource {
     }
 
     private fun chooseClosestAncestor(target: RestCallAction, verbs: List<HttpVerb>, randomness: Randomness): RestCallAction? {
-
         var others = sameOrAncestorEndpoints(target)
         others = hasWithVerbs(others, verbs).filter { t -> t.getName() != target.getName() }
         if(others.isEmpty()) return null
@@ -674,45 +564,10 @@ class RestAResource {
         return 0
     }
 
-    private fun preventPathParamMutation(action: RestCallAction) {
-        action.parameters.forEach { p -> if (p is PathParam) p.preventMutation() }
-    }
-
-    private fun actionSorted(action : RestAction, delfirtst : Boolean = false) : Int{
-        if(action is RestCallAction){
-            when (action.verb){
-                HttpVerb.POST -> return 0
-                HttpVerb.GET -> return 1
-                HttpVerb.PUT -> return 2
-                HttpVerb.PATCH -> return 3
-                HttpVerb.DELETE -> return if(delfirtst) -1 else 4
-            }
-        }
-        return -2
-    }
-
-//    fun isAnyAction() : Boolean{
-//        return !(actions.size == 1 && isNoParamGet)
-//    }
-
     fun isAnyAction() : Boolean{
         verbs.forEach {
             if (it) return true
         }
         return false
     }
-
-    fun sampleRestResourceCalls(randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
-        assert(maxTestSize > 0)
-        val chosen = templates.filter { !it.value.independent && it.value.size <= maxTestSize }
-        if(chosen.isEmpty())
-            return sampleIndResourceCall(randomness, maxTestSize)
-        val chosenWithPost = selectTemplate({call : CallsTemplate -> !call.independent && call.size <= maxTestSize}, randomness, chosen)
-        chosenWithPost?.let {
-            return genCalls(it.template,randomness, maxTestSize)
-        }
-        return sampleIndResourceCall(randomness, maxTestSize)
-    }
-
-
 }

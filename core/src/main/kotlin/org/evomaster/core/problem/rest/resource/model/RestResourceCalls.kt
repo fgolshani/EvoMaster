@@ -5,7 +5,7 @@ import org.evomaster.core.problem.rest.HttpVerb
 import org.evomaster.core.problem.rest.RestAction
 import org.evomaster.core.problem.rest.RestCallAction
 import org.evomaster.core.search.gene.Gene
-import org.evomaster.core.search.impact.ImpactOfGene
+import org.evomaster.core.search.impact.ImpactUtil
 
 /**
  * the class is used to structure actions regarding resources.
@@ -57,7 +57,7 @@ class RestResourceCalls(
      */
     fun seeGenesIdMap() : Map<Gene, String>{
         longestPath().apply {
-            return seeGenes().map { it to ImpactOfGene.generateId(this, it) }.toMap()
+            return seeGenes().map { it to ImpactUtil.generateId(this, it) }.toMap()
         }
     }
 

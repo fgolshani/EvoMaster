@@ -65,7 +65,7 @@ class ResourceRestIndividual (
         resourceCalls.set(position2, first)
     }
 
-    fun seeGenesIdMap() : Map<Gene, String>{
+    override fun seeGenesIdMap() : Map<Gene, String>{
         return resourceCalls.flatMap { r -> r.seeGenesIdMap().map { it.key to it.value } }.toMap()
     }
 
@@ -75,7 +75,7 @@ class ResourceRestIndividual (
                 sampleType,
                 dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
                 trackOperator,
-                if(getTrack() == null) mutableListOf() else getTrack()!!.plus(this).map { (it as ResourceRestIndividual).copy() as ResourceRestIndividual}.toMutableList()
+                if(getTracking() == null) mutableListOf() else getTracking()!!.plus(this).map { (it as ResourceRestIndividual).copy() as ResourceRestIndividual}.toMutableList()
         )
     }
 
@@ -83,13 +83,13 @@ class ResourceRestIndividual (
         when(withTrack){
             false-> return copy() as ResourceRestIndividual
             else ->{
-                getTrack()?:return copy() as ResourceRestIndividual
+                getTracking()?:return copy() as ResourceRestIndividual
                 return ResourceRestIndividual(
                         resourceCalls.map { it.copy() }.toMutableList(),
                         sampleType,
                         dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
                         trackOperator,
-                        getTrack()!!.map { (it as ResourceRestIndividual).copy() as ResourceRestIndividual}.toMutableList()
+                        getTracking()!!.map { (it as ResourceRestIndividual).copy() as ResourceRestIndividual}.toMutableList()
                 )
             }
         }
