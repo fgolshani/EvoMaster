@@ -1,6 +1,8 @@
 package org.evomaster.core.problem.rest.resource.model.dependency
 
-
+/**
+ * key relies on target
+ */
 open class RelatedTo(
         private val key: String,
         val targets : MutableList<out Any>,
@@ -8,7 +10,7 @@ open class RelatedTo(
         var additionalInfo : String = ""
 ){
     companion object {
-        private const val separator =  "$->$"
+        private const val DIRECT_DEPEND =  "$->$"
 
         fun generateKeyForMultiple(keys : List<String>) : String = if(keys.isEmpty()) "" else if( keys.size == 1)  keys.first() else "{${keys.joinToString(",")}}"
 
@@ -18,14 +20,12 @@ open class RelatedTo(
             }
             return listOf(key)
         }
-
     }
-
     open fun notateKey() : String = key
     open fun originalKey() : String = key
 
     open fun getTargetsName () : String = generateKeyForMultiple(targets.map { it.toString() })
-    open fun getName() : String = notateKey() + separator + getTargetsName()
+    open fun getName() : String = "${notateKey()}$DIRECT_DEPEND${getTargetsName()}"
 }
 
 /**
@@ -37,7 +37,6 @@ class ParamRelatedToTable (key: String, target: MutableList<String>, probability
 
     companion object {
         fun getNotateKey(paramName : String): String = "PARM:$paramName"
-
     }
 
     override fun notateKey() : String = getNotateKey(originalKey())
@@ -46,12 +45,11 @@ class ParamRelatedToTable (key: String, target: MutableList<String>, probability
 /**
  *  @param path is a list of path(s), which can be parsed with [RelatedTo.parseMultipleKey]
  *  @param target is a list of paths of related rest resources
- *
  */
 open class ResourceRelatedToResources(
         path : List<String>,
         target: MutableList<String>,
-        probability: Double,
+        probability: Double = 1.0,
         info: String = ""
 ) : RelatedTo(generateKeyForMultiple(path), target, probability, info){
 

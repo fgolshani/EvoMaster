@@ -297,6 +297,9 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
         }
     }
 
+    /**
+     * Apply archive-based mutation to select genes to mutate
+     */
     private fun selectGenesByArchive(genesToMutate : List<Gene>, individual: T, evi: EvaluatedIndividual<T>) : List<Gene>{
 
         val candidatesMap = individual.seeGenesIdMap().filter { genesToMutate.contains(it.key) }
@@ -381,6 +384,9 @@ open class StandardMutator<T> : Mutator<T>() where T : Individual {
         return selectGenesByOneDivNum(genes, genes.size)
     }
 
+    /**
+     * Apply archive-based mutation to mutate genes
+     */
     private fun mutateGene(gene: Gene, all: List<Gene>, evi: EvaluatedIndividual<T>) {
 
         when (gene) {

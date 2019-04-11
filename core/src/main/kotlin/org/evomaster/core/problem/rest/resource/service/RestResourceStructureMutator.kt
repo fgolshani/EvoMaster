@@ -11,6 +11,7 @@ class RestResourceStructureMutator : StructureMutator() {
     @Inject
     private lateinit var rm : ResourceManageService
 
+    var executedStructureMutator :MutationType? = null
 
     override fun mutateStructure(individual: Individual) {
         if(individual !is ResourceRestIndividual)
@@ -22,7 +23,7 @@ class RestResourceStructureMutator : StructureMutator() {
     private fun mutateRestResourceCalls(ind: ResourceRestIndividual) {
 
         val num = ind.getResourceCalls().size
-        val type = randomness.choose(
+        executedStructureMutator = randomness.choose(
                 MutationType.values()
                         .filter {  num >= it.minSize }
                         .filterNot{
@@ -32,7 +33,7 @@ class RestResourceStructureMutator : StructureMutator() {
                                         it.resource.getKey()
                                     }.toSet().size >= rm.getResourceCluster().size && (it == MutationType.ADD || it == MutationType.REPLACE))
                         })
-        when(type){
+        when(executedStructureMutator){
             MutationType.ADD -> handleAdd(ind)
             MutationType.DELETE -> handleDelete(ind)
             MutationType.SWAP -> handleSwap(ind)
@@ -136,5 +137,9 @@ class RestResourceStructureMutator : StructureMutator() {
      */
     override fun addInitializingActions(individual: EvaluatedIndividual<*>) {
         //do noting
+    }
+
+    fun resetExecutedStructureMutator(){
+        executedStructureMutator = null
     }
 }

@@ -8,6 +8,7 @@ import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.service.*
 import org.evomaster.core.Lazy
+import org.evomaster.core.problem.rest.resource.service.RestResourceStructureMutator
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.tracer.TrackOperator
 
@@ -58,6 +59,8 @@ abstract class Mutator<T> : TrackOperator where T : Individual {
 
     open fun postActionAfterMutation(individual: T){}
 
+    open fun update(previous: EvaluatedIndividual<T>, mutated : EvaluatedIndividual<T>, mutatedGenes: MutableList<Gene>){}
+
     /**
      * @param upToNTimes how many mutations will be applied. can be less if running out of time
      * @param individual which will be mutated
@@ -91,6 +94,11 @@ abstract class Mutator<T> : TrackOperator where T : Individual {
                     ?: continue
 
             val reachNew = archive.wouldReachNewTarget(mutated)
+
+            /*
+                enable further actions for extracting
+             */
+            update(trackedCurrent, mutated, mutatedGenes)
 
             if (reachNew || !current.fitness.subsumes(mutated.fitness, targets)) {
                 val trackedMutated = if(config.enableTrackEvaluatedIndividual) trackedCurrent.next(this, mutated)!! else mutated

@@ -385,16 +385,13 @@ class SqlInsertBuilder(
         dataInDB.clear()
 
         for(table in tables.values){
-            /**
-             * temporal solution Table "SCHEMA_VERSION" not found; SQL statement:
-             */
-            if(table.name.toLowerCase() == "schema_version") continue
             val pks = table.columns.filter { it.primaryKey }
             val selected = if(pks.isEmpty()) {
                 SQLKey.ALL.key
                 //continue
-            } else pks.map { it.name }.joinToString(",")
-            val sql = "SELECT $selected FROM ${table.name}"
+            } else pks.map {"\"${it.name}\""}.joinToString(",")
+
+            val sql = "SELECT $selected FROM \"${table.name}\""
 
             val dto = DatabaseCommandDto()
             dto.command = sql

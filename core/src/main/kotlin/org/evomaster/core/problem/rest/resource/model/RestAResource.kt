@@ -239,7 +239,6 @@ class RestAResource {
             params.find { sp -> sp != p && p.name == sp.name && p::class.java.simpleName == sp::class.java.simpleName }?.apply {
                 ParamUtil.bindParam(this, path, path, mutableListOf(p))
             }
-
         }
     }
 
@@ -570,4 +569,6 @@ class RestAResource {
         }
         return false
     }
+
+    fun getName() : String = path.toString()
 }

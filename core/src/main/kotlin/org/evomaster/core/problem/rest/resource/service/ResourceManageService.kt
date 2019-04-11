@@ -23,6 +23,7 @@ import org.evomaster.core.problem.rest.resource.util.ParamUtil
 import org.evomaster.core.problem.rest.resource.util.ParserUtil
 import org.evomaster.core.problem.rest.resource.util.RTemplateHandler
 import org.evomaster.core.search.Action
+import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.gene.*
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.service.Sampler
@@ -165,6 +166,282 @@ class ResourceManageService {
                 }
             }
         }
+    }
+
+    /**
+     * detect possible dependency among resources,
+     * the entry is structure mutation
+     *
+     * [isBetter] 1 means current is better than previous, 0 means that they are equal, and -1 means current is worse than previous
+     */
+    fun detectDependency(previous : EvaluatedIndividual<ResourceRestIndividual>, current : EvaluatedIndividual<ResourceRestIndividual>, isBetter: Int){
+        val seqPre = previous.individual.getResourceCalls()
+        val seqCur = current.individual.getResourceCalls()
+
+        when(seqCur.size - seqPre.size){
+            0 ->{
+                //SWAP, MODIFY, REPLACE
+                if(seqPre.map { it.resource.getAResourceKey() }.toList() == seqCur.map { it.resource.getAResourceKey() }.toList()){
+                    //MODIFY
+                    /*
+                        For instance, ABCDEFG, if we replace B with another resource instance, then check CDEFG.
+                        if C is worse/better, C rely on B, else C may not rely on B, i.e., the changes of B cannot affect C.
+                     */
+                    if(isBetter != 0){
+                        val modified = seqCur.find { ec -> seqPre.find { ep -> ep.resource.getKey() != ec.resource.getKey() } != null  }
+                        val locOfModified = seqCur.indexOf(modified)
+
+                        var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
+                            if(index < locOfModified) restResourceCalls.actions.size
+                            else 0
+                        }.sum()
+
+                        ((locOfModified + 1) until seqCur.size).forEach { indexOfCalls ->
+                            var isAnyChange = false
+                            seqCur[indexOfCalls].actions.forEach {
+                                actionIndex += 1
+                                val actionA = actionIndex
+                                isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous) !=0
+                            }
+
+                            if(isAnyChange){
+                                //seqPre[indexOfCalls] depends on added
+                                val seqKey = seqPre[indexOfCalls].resource.getAResourceKey()
+                                val depModified = ResourceRelatedToResources(listOf(seqKey), mutableListOf(modified!!.resource.getAResourceKey()))
+
+                                val found = dependencies.getOrPut(seqKey){ mutableListOf()}.find { it.targets.contains(modified!!.resource.getAResourceKey()) }
+                                if (found == null) dependencies[seqKey]!!.add(depModified)
+                                else found.probability = 1.0
+                            }
+                        }
+                    }
+
+
+                }else if(seqPre.map { it.resource.getAResourceKey() }.toSet() == seqCur.map { it.resource.getAResourceKey() }.toSet()){
+                    //SWAP
+                    /*
+                        For instance, ABCDEFG, if we swap B and F, become AFCDEBG, then check FCDE (do not include B!).
+                        if F is worse, F may rely on {C, D, E, B}
+                        if C is worse, C rely on B; else if C is better, C rely on F; else C may not rely on B and F
+                     */
+                    if(isBetter != 0){
+                        //find the element is not in the same position
+                        val swaps = seqCur.filterIndexed { index, ec ->
+                            seqPre.indexOfFirst { ep->
+                                ep.resource.getAResourceKey() == ec.resource.getAResourceKey()
+                            } != index
+                        }
+                        assert(swaps.size == 2)
+                        val swapF = swaps[0]
+                        val swapB = swaps[1]
+
+                        val locOfF = seqCur.indexOf(swapF)
+
+                        val distance = swapF.actions.size - swapB.actions.size
+
+                        var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
+                            if(index < locOfF) restResourceCalls.actions.size
+                            else 0
+                        }.sum()
+
+                        ( (locOfF + 1) until seqCur.indexOf(swapB) ).forEach { indexOfCalls ->
+                            var isAnyChange = false
+                            var changeDegree = 0
+                            seqCur[indexOfCalls].actions.forEach {
+                                actionIndex += 1
+                                val actionA = actionIndex + distance
+                                isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous).also { r-> changeDegree += r } !=0
+                            }
+
+                            if(isAnyChange){
+                                val seqKey = seqPre[indexOfCalls].resource.getAResourceKey()
+
+                                val relyOn = if(changeDegree > 0){
+                                    mutableListOf(swapF!!.resource.getAResourceKey())
+                                }else if(changeDegree < 0){
+                                    mutableListOf(swapB!!.resource.getAResourceKey())
+                                }else
+                                    mutableListOf(swapB!!.resource.getAResourceKey(), swapF!!.resource.getAResourceKey())
+
+                                val depReplace = ResourceRelatedToResources(listOf(seqKey), relyOn)
+
+                                val found = dependencies.getOrPut(seqKey){ mutableListOf()}.find { it.targets.contains(relyOn) }
+
+                                if (found == null) dependencies[seqKey]!!.add(depReplace)
+                                else found.probability = 1.0
+                            }
+                        }
+
+                    }
+
+                }else{
+                    //REPLACE
+                    /*
+                        For instance, ABCDEFG, if we replace B with H become AHCDEFG, then check CDEFG.
+                        if C is worse, C rely on B; else if C is better, C rely on H; else C may not rely on B and H
+                     */
+                    if(isBetter != 0){
+                        val replaced = seqCur.find { cur -> seqPre.find { pre-> pre.resource.getAResourceKey() == cur.resource.getAResourceKey() } == null }
+
+                        val replace = seqPre.find { pre -> seqCur.find { cur-> pre.resource.getAResourceKey() == cur.resource.getAResourceKey() } == null }
+
+                        val locOfReplaced = seqCur.indexOf(replaced)
+                        val distance = locOfReplaced - seqPre.indexOf(replace)
+
+                        var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
+                            if(index < locOfReplaced) restResourceCalls.actions.size
+                            else 0
+                        }.sum()
+
+                        ( (locOfReplaced + 1) until seqCur.size ).forEach { indexOfCalls ->
+                            var isAnyChange = false
+                            var changeDegree = 0
+                            seqCur[indexOfCalls].actions.forEach {
+                                actionIndex += 1
+                                val actionA = actionIndex + distance
+                                isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous).also { r-> changeDegree += r } !=0
+                            }
+
+                            if(isAnyChange){
+                                val seqKey = seqPre[indexOfCalls].resource.getAResourceKey()
+
+                                val relyOn = if(changeDegree > 0){
+                                    mutableListOf(replaced!!.resource.getAResourceKey())
+                                }else if(changeDegree < 0){
+                                    mutableListOf(replace!!.resource.getAResourceKey())
+                                }else
+                                    mutableListOf(replaced!!.resource.getAResourceKey(), replace!!.resource.getAResourceKey())
+
+                                val depReplace = ResourceRelatedToResources(listOf(seqKey), relyOn)
+
+                                val found = dependencies.getOrPut(seqKey){ mutableListOf()}.find { it.targets.contains(relyOn) }
+
+                                if (found == null) dependencies[seqKey]!!.add(depReplace)
+                                else found.probability = 1.0
+                            }
+                        }
+
+                    }
+                }
+            }
+            1 ->{
+                //ADD
+                /*
+                     For instance, ABCDEFG, if we add H at 3nd position, become ABHCDEFG, then check CDEFG.
+                     if C is better, C rely on H; else if C is worse, ??? ;else C may not rely on H
+                */
+                if(isBetter == 1){
+                    val added = seqCur.find { cur -> seqPre.find { pre-> pre.resource.getAResourceKey() == cur.resource.getAResourceKey() } == null }
+                    val addedKey = added!!.resource.getAResourceKey()
+
+                    val locOfAdded = seqCur.indexOf(added!!)
+                    var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
+                        if(index < locOfAdded) restResourceCalls.actions.size
+                        else 0
+                    }.sum()
+
+                    val distance = added!!.actions.size
+
+                    (locOfAdded until seqPre.size).forEach { indexOfCalls ->
+                        var isAnyChange = false
+
+                        seqPre[indexOfCalls].actions.forEach {
+                            actionIndex += 1 //actionB
+                            val actionA = actionIndex + distance
+                            isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous)!=0
+                        }
+
+                        if(isAnyChange){
+                            //seqPre[indexOfCalls] depends on added
+                            val seqKey = seqPre[indexOfCalls].resource.getAResourceKey()
+                            val depAdded = ResourceRelatedToResources(listOf(seqKey), mutableListOf(addedKey))
+
+                            val found = dependencies.getOrPut(seqKey){ mutableListOf()}.find { it.targets.contains(addedKey) }
+                            if (found == null) dependencies[seqKey]!!.add(depAdded)
+                            else found.probability = 1.0
+                        }
+                    }
+                }
+            }
+            -1 ->{
+                //DELETE
+                /*
+                     For instance, ABCDEFG, if we delete B, become ACDEFG, then check CDEFG.
+                     if C is worse, C rely on B; else if C is better, ??? ; else C may not rely on B.
+                */
+                if(isBetter == -1){
+                    val delete = seqPre.find { pre -> seqCur.find { cur-> pre.resource.getAResourceKey() == cur.resource.getAResourceKey() } == null }
+                    val deleteKey = delete!!.resource.getAResourceKey()
+
+                    val locOfDelete = seqPre.indexOf(delete!!)
+                    var actionIndex = seqPre.mapIndexed { index, restResourceCalls ->
+                        if(index < locOfDelete) restResourceCalls.actions.size
+                        else 0
+                    }.sum()
+
+                    val distance = delete!!.actions.size
+
+                    ((locOfDelete + 1) until seqPre.size).forEach { indexOfCalls ->
+                        var isAnyChange = false
+
+                        seqPre[indexOfCalls].actions.forEach {
+                            actionIndex += 1 //actionB
+                            val actionA = actionIndex - distance
+                            isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous)!=0
+                        }
+
+                        if(isAnyChange){
+                            //seqPre[indexOfCalls] depends on added
+                            val seqKey = seqPre[indexOfCalls].resource.getAResourceKey()
+                            val depDelete = ResourceRelatedToResources(listOf(seqKey), mutableListOf(deleteKey))
+
+                            val found = dependencies.getOrPut(seqKey){ mutableListOf()}.find { it.targets.contains(deleteKey) }
+                            if (found == null) dependencies[seqKey]!!.add(depDelete)
+                            else found.probability = 1.0
+                        }
+                    }
+                }else if(isBetter == 1){
+                    // is it possible to make it better
+                    TODO("not support yet")
+                }
+            }
+            else ->{
+                TODO("not support yet")
+            }
+        }
+
+    }
+
+    /**
+     *  is the performance of [actionA] better than the performance [actionB]?
+     */
+    private fun compare(actionA : Int, eviA : EvaluatedIndividual<ResourceRestIndividual>, actionB: Int, eviB : EvaluatedIndividual<ResourceRestIndividual>) : Int{
+        val alistHeuristics = eviA.fitness.getViewOfData().filter { it.value.actionIndex == actionA }
+        val blistHeuristics = eviB.fitness.getViewOfData().filter { it.value.actionIndex == actionB }
+
+        //whether actionA reach more
+        if(alistHeuristics.size > blistHeuristics.size) return 1
+        else if(alistHeuristics.size < blistHeuristics.size) return -1
+
+        //whether actionA reach new
+        if(alistHeuristics.filter { !blistHeuristics.containsKey(it.key) }.isNotEmpty()) return 1
+        else if(blistHeuristics.filter { !alistHeuristics.containsKey(it.key) }.isNotEmpty()) return -1
+
+        val targets = alistHeuristics.keys.plus(blistHeuristics.keys).toHashSet()
+
+        targets.forEach { t->
+            val ta = alistHeuristics[t]
+            val tb = blistHeuristics[t]
+
+            if(ta != null && tb != null){
+                if(ta.distance > tb.distance)
+                    return 1
+                else if(ta.distance < tb.distance)
+                    return -1
+            }
+        }
+
+        return 0
     }
 
     private fun probOfResToTable(resourceKey: String, tableName: String) : Double{
