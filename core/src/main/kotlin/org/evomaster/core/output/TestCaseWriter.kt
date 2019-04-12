@@ -127,7 +127,6 @@ class TestCaseWriter {
                     }
                 }
             }
-            lines.deindent()
 
             if (index == dbInitialization.size - 1) {
                 lines.add(".dtos()" +

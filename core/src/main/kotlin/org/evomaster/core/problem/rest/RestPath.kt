@@ -286,6 +286,6 @@ class RestPath(path: String) {
     }
 
     fun getStaticTokens(): List<String> {
-        return tokens.filter { t -> !t.isParameter }.map { t -> t.name }
+        return elements.flatMap { it.tokens.filter { t -> !t.isParameter }.map { t -> t.name } }
     }
 }
