@@ -633,9 +633,4 @@ class EMConfig {
         APPROACH_GOOD,
         FEED_BACK
     }
-
-    @Experimental
-    @Cfg("Whether involve natural language parser to detect relationships among resources")
-    var doesInvolveParser = false
-
 }
