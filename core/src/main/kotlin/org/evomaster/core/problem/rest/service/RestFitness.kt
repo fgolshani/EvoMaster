@@ -6,9 +6,8 @@ import org.evomaster.client.java.controller.api.dto.AdditionalInfoDto
 import org.evomaster.client.java.controller.api.dto.ExtraHeuristicDto
 import org.evomaster.client.java.controller.api.dto.SutInfoDto
 import org.evomaster.client.java.controller.api.dto.TestResultsDto
-import org.evomaster.client.java.controller.api.dto.database.execution.ReadDbDataDto
 import org.evomaster.core.database.DbActionTransformer
-import org.evomaster.core.database.EmptySelects
+import org.evomaster.core.database.DatabaseExecution
 import org.evomaster.core.problem.rest.*
 import org.evomaster.core.problem.rest.auth.NoAuth
 import org.evomaster.core.problem.rest.param.BodyParam
@@ -50,6 +49,50 @@ class RestFitness : AbstractRestFitness<RestIndividual>() {
 
     @Inject
     private lateinit var sampler : RestSampler
+
+
+    private val client: Client = {
+        val configuration = ClientConfig()
+                .property(ClientProperties.CONNECT_TIMEOUT, 10_000)
+                .property(ClientProperties.READ_TIMEOUT, 10_000)
+                //workaround bug in Jersey client
+                .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
+        ClientBuilder.newClient(configuration)
+    }.invoke()
+
+    private lateinit var infoDto: SutInfoDto
+
+
+    @PostConstruct
+    private fun initialize() {
+
+        log.debug("Initializing {}", RestFitness::class.simpleName)
+
+        rc.checkConnection()
+
+        val started = rc.startSUT()
+        if (!started) {
+            throw SutProblemException("Failed to start the system under test")
+        }
+
+        infoDto = rc.getSutInfo()
+                ?: throw SutProblemException("Failed to retrieve the info about the system under test")
+
+        log.debug("Done initializing {}", RestFitness::class.simpleName)
+    }
+
+    override fun reinitialize(): Boolean {
+
+        try {
+            rc.stopSUT()
+            initialize()
+        } catch (e: Exception) {
+            log.warn("Failed to re-initialize the SUT: $e")
+            return false
+        }
+
+        return true
+    }
 
     override fun doCalculateCoverage(individual: RestIndividual): EvaluatedIndividual<RestIndividual>? {
 
@@ -120,6 +163,78 @@ class RestFitness : AbstractRestFitness<RestIndividual>() {
             TODO when dealing with seeding, might want to extend EvaluatedIndividual
             to keep track of AdditionalInfo
          */
+    }
+
+    private fun handleExtra(dto: TestResultsDto, fv: FitnessValue) {
+        if (configuration.heuristicsForSQL) {
+
+            for (i in 0 until dto.extraHeuristics.size) {
+
+                val extra = dto.extraHeuristics[i]
+
+                if (!isEmpty(extra)) {
+                    //TODO handling of toMaximize
+                    fv.setExtraToMinimize(i, extra.toMinimize)
+                }
+
+                fv.setDatabaseExecution(i, DatabaseExecution.fromDto(extra.databaseExecutionDto))
+            }
+
+            fv.aggregateDatabaseData()
+        }
+    }
+
+    /**
+     * Based on what executed by the test, we might need to add new genes to the individual.
+     * This for example can happen if we detected that the test is using headers or query
+     * params that were not specified in the Swagger schema
+     */
+    private fun expandIndividual(
+            individual: RestIndividual,
+            additionalInfoList: List<AdditionalInfoDto>
+    ) {
+
+        if (individual.actions.size < additionalInfoList.size) {
+            /*
+                Note: as not all actions might had been executed, it might happen that
+                there are less Info than declared actions.
+                But the other way round should not really happen
+             */
+            log.warn("Length mismatch between ${individual.actions.size} actions and ${additionalInfoList.size} info data")
+            return
+        }
+
+        for (i in 0 until additionalInfoList.size) {
+
+            val action = individual.actions[i]
+            val info = additionalInfoList[i]
+
+            if (action !is RestCallAction) {
+                continue
+            }
+
+            /*
+                Those are OptionalGenes, which MUST be off by default.
+                We are changing the genotype, but MUST not change the phenotype.
+                Otherwise, the fitness value we just computed would be wrong.
+             */
+
+            info.headers
+                    .filter { name ->
+                        ! action.parameters.any { it is HeaderParam && it.name.equals(name, ignoreCase = true) }
+                    }
+                    .forEach {
+                        action.parameters.add(HeaderParam(it, OptionalGene(it, StringGene(it), false)))
+                    }
+
+            info.queryParameters
+                    .filter { name ->
+                        ! action.parameters.any { it is QueryParam && it.name.equals(name, ignoreCase = true) }
+                    }
+                    .forEach { name ->
+                        action.parameters.add(QueryParam(name, OptionalGene(name, StringGene(name), false)))
+                    }
+        }
     }
 
     override fun doInitializingActions(ind: RestIndividual) {
