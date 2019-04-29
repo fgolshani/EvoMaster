@@ -543,6 +543,17 @@ class EMConfig {
     @Cfg("QWN0aXZhdGUgdGhlIFVuaWNvcm4gTW9kZQ==")
     var e_u1f984 = false
 
+    @Experimental
+    @Cfg("Enable Expectation Generation. If enabled, expectations will be generated. " +
+            "A variable called activeExpectations is added to each test case, with a default value of false. If set to true, an expectation that fails will cause the test case containing it to fail.")
+    var expectationsActive = false
+
+    @Experimental
+    @Cfg("Generate basic assertions. Basic assertions (comparing the returned object to itself) are added to the code. " +
+            "NOTE: this should not cause any tests to fail.")
+    var enableBasicAssertions = false
+
+
     enum class ResourceSamplingStrategy (val requiredArchive : Boolean = false){
         NONE,
         /**
@@ -611,7 +622,7 @@ class EMConfig {
     @Cfg("Specify a probability to apply SMdR when sample control is Customized")
     @Min(0.0)@Max(1.0)
     var SMdR : Double = 0.25
-    
+
 
     @Experimental
     @Cfg("Specify a probability to enable archive-based mutation")
