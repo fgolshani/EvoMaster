@@ -9,6 +9,10 @@ open class RelatedTo(
         var probability: Double,
         var additionalInfo : String = ""
 ){
+
+    init {
+        assert(targets.isNotEmpty())
+    }
     companion object {
         private const val DIRECT_DEPEND =  "$->$"
 
@@ -71,3 +75,5 @@ class MutualResourcesRelations(mutualResources: List<String>, probability: Doubl
     }
 
 }
+
+class SelfResourcesRelation(path : String, probability: Double = 1.0, info: String = "") : ResourceRelatedToResources(mutableListOf(path), mutableListOf(path), probability, info)

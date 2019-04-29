@@ -2,7 +2,7 @@ package org.evomaster.core.problem.rest.resource.service
 
 import com.google.inject.Inject
 import org.evomaster.core.EMConfig
-import org.evomaster.core.problem.rest.resource.model.RestAResource
+import org.evomaster.core.problem.rest.resource.model.RestResource
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.service.SearchTimeController
 import org.slf4j.Logger
@@ -54,7 +54,7 @@ class SmartSamplingController {
         println( ResourceSamplingMethod.values().filter{ it.applicable }.mapNotNull { "$it : ${it.probability}"}.joinToString (" - "))
     }
 
-    private fun printSummaryOfResources(mutableMap: Map<String, RestAResource>){
+    private fun printSummaryOfResources(mutableMap: Map<String, RestResource>){
         println("Summary of abstract resources and actions>>>")
         val message ="""
             #Rs ${mutableMap.size}
@@ -153,7 +153,7 @@ class SmartSamplingController {
     /**
      * probability is assigned based on percentage of actions that are dependent or independent regarding resources
      */
-    private fun initProbabilityWithActions(mutableMap: Map<String, RestAResource>){
+    private fun initProbabilityWithActions(mutableMap: Map<String, RestResource>){
         val numOfDepActions = mutableMap.values.map { it.numOfDepTemplate() }.sum()
         val num = mutableMap.values.map { it.numOfTemplates() }.sum()
         /**

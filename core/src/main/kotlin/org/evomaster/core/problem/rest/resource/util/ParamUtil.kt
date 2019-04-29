@@ -50,8 +50,6 @@ class ParamUtil {
                 if(numOfBodyParam(params) == params.size && params.isNotEmpty()){
                     bindBodyAndOther(params.first{ pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath,false, inner)
                 }
-//                else
-//                    log.warn("cannot find PathParam ${p.name} in params ${params.mapNotNull { it.name }.joinToString(" ")}")
             }
         }
 
@@ -59,13 +57,10 @@ class ParamUtil {
             if(params.isNotEmpty() && numOfBodyParam(params) == params.size){
                 bindBodyAndOther(params.first{ pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath,false, inner)
             }else{
-                val sg = params.filter { pa -> !(pa is BodyParam) }.find { pa -> pa.name == p.name && p.gene::class.java.simpleName == pa.gene::class.java.simpleName}
+                val sg = params.filter { pa -> !(pa is BodyParam) }.find { pa -> pa.name == p.name}
                 if(sg != null){
-                    //p.gene.copyValueFrom(sg.gene)
-                    copyWithTypeAdapter(p.gene, sg.gene)
+                    copyWithTypeAdapter(p.gene, getValueGene(sg.gene))
                 }
-//                else
-//                    log.warn("cannot find QueryParam ${p.name} in params ${params.map { it.name }.joinToString(" ")}")
             }
         }
 
@@ -79,8 +74,12 @@ class ParamUtil {
                 val valueGene = getValueGene(bp.gene)
                 val pValueGene = getValueGene(params[0].gene)
                 if(valueGene !is ObjectGene
-                        || pValueGene !is ObjectGene)
-                    throw IllegalArgumentException("cannot bind")
+                        || pValueGene !is ObjectGene){
+                    /*
+                        it is probably casued by common name of BodyParam i.e., "body"
+                     */
+                    return
+                }
 
                 if((valueGene).fields.map { g -> g.name }.containsAll((pValueGene).fields.map { g -> g.name })){
                     valueGene.copyValueFrom(pValueGene)
@@ -112,12 +111,6 @@ class ParamUtil {
                         val first = matched.first()
                         copyGene(bodyMap.getValue(first), pathGene, b2g)
                     }
-//                    else{
-//                        if(inner){
-//                            log.info("cannot find ${pathkey} in its bodyParam ${bodyMap.keys.joinToString(" ")}")
-//                        }else
-//                            log.warn("cannot find ${pathkey} in bodyParam ${bodyMap.keys.joinToString(" ")}")
-//                    }
                 }
             }
         }
@@ -167,7 +160,10 @@ class ParamUtil {
                 is IntegerGene -> covertToInteger(b,g)
                 is LongGene -> covertToLong(b,g)
                 is StringGene -> covertToString(b,g)
-                else -> false
+                is OptionalGene -> copyWithTypeAdapter(getValueGene(b), getValueGene(g))
+                else -> {
+                    false
+                }
             }
         }
 

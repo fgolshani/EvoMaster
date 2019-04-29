@@ -11,8 +11,6 @@ class RestResourceStructureMutator : StructureMutator() {
     @Inject
     private lateinit var rm : ResourceManageService
 
-    var executedStructureMutator :MutationType? = null
-
     override fun mutateStructure(individual: Individual) {
         if(individual !is ResourceRestIndividual)
             throw IllegalArgumentException("Invalid individual type")
@@ -23,14 +21,14 @@ class RestResourceStructureMutator : StructureMutator() {
     private fun mutateRestResourceCalls(ind: ResourceRestIndividual) {
 
         val num = ind.getResourceCalls().size
-        executedStructureMutator = randomness.choose(
+        val executedStructureMutator = randomness.choose(
                 MutationType.values()
                         .filter {  num >= it.minSize }
                         .filterNot{
                             (ind.seeActions().size == config.maxTestSize && it == MutationType.ADD) ||
                                     //if the individual includes all resources, ADD and REPLACE are not applicable
                                     (ind.getResourceCalls().map {
-                                        it.resource.getKey()
+                                        it.resourceInstance.getKey()
                                     }.toSet().size >= rm.getResourceCluster().size && (it == MutationType.ADD || it == MutationType.REPLACE))
                         })
         when(executedStructureMutator){
@@ -40,6 +38,8 @@ class RestResourceStructureMutator : StructureMutator() {
             MutationType.REPLACE -> handleReplace(ind)
             MutationType.MODIFY -> handleModify(ind)
         }
+
+        ind.repairDBActions()
     }
 
     /**
@@ -71,15 +71,21 @@ class RestResourceStructureMutator : StructureMutator() {
 
     /**
      * add new resource call
+     *
+     * Note that if dependency is enabled,
+     * the added resource can be its dependent resource with a probability i.e.,[config.probOfEnablingResourceDependencyHeuristics]
      */
     private fun handleAdd(ind: ResourceRestIndividual){
 
-        var max = config.maxTestSize
+        val sizeOfCalls = ind.getResourceCalls().size
+
+         var max = config.maxTestSize
         ind.getResourceCalls().forEach { max -= it.actions.size }
 
         val fromDependency = rm.isDependencyNotEmpty()
                 && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
 
+        //FIXME
         var call = if(fromDependency){
                         rm.handleAddDepResource(ind, max)
                     }else null
@@ -100,6 +106,8 @@ class RestResourceStructureMutator : StructureMutator() {
 
             ind.addResourceCall( pos, call)
         }
+
+        assert(sizeOfCalls == ind.getResourceCalls().size - 1)
     }
 
     /**
@@ -124,9 +132,9 @@ class RestResourceStructureMutator : StructureMutator() {
         var max = config.maxTestSize
         ind.getResourceCalls().forEach { max -= it.actions.size }
         max += ind.getResourceCalls()[pos].actions.size
-        var new = old.resource.ar.generateAnother(old, randomness, max)
+        var new = old.resourceInstance.ar.generateAnother(old, randomness, max)
         if(new == null){
-            new = old.resource.ar.sampleOneAction(null, randomness, max)
+            new = old.resourceInstance.ar.sampleOneAction(null, randomness, max)
         }
         assert(new != null)
         ind.replaceResourceCall(pos, new)
@@ -139,7 +147,5 @@ class RestResourceStructureMutator : StructureMutator() {
         //do noting
     }
 
-    fun resetExecutedStructureMutator(){
-        executedStructureMutator = null
-    }
+
 }

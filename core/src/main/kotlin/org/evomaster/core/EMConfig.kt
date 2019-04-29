@@ -611,11 +611,7 @@ class EMConfig {
     @Cfg("Specify a probability to apply SMdR when sample control is Customized")
     @Min(0.0)@Max(1.0)
     var SMdR : Double = 0.25
-
-
-    @Experimental
-    @Cfg("Whether show target info")
-    var showTarget = true
+    
 
     @Experimental
     @Cfg("Specify a probability to enable archive-based mutation")
@@ -637,5 +633,9 @@ class EMConfig {
         APPROACH_GOOD,
         FEED_BACK
     }
+
+    @Experimental
+    @Cfg("Whether involve natural language parser to detect relationships among resources")
+    var doesInvolveParser = false
 
 }

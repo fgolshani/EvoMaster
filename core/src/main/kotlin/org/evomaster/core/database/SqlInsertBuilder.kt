@@ -13,6 +13,7 @@ import org.evomaster.core.problem.rest.resource.db.SQLGenerator
 import org.evomaster.core.problem.rest.resource.db.SQLKey
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.ImmutableDataHolderGene
+import org.evomaster.core.search.gene.SqlAutoIncrementGene
 import org.evomaster.core.search.gene.SqlPrimaryKeyGene
 import java.lang.IllegalStateException
 
@@ -400,5 +401,40 @@ class SqlInsertBuilder(
                     ?: continue
             dataInDB.getOrPut(table.name){ result.rows.map { it }.toMutableList()}
         }
+    }
+
+    fun generateSelect(sqlPks : List<SqlPrimaryKeyGene>) : MutableList<DbAction>{
+
+        if(dbExecutor == null){
+            throw IllegalStateException("No Database Executor registered for this object")
+        }
+
+        val involvedTables = sqlPks.map { it.tableName }
+        val selection = mutableListOf<DbAction>()
+
+        involvedTables.forEach { tableName ->
+            val table = tables[tableName]!!
+            val colMap = sqlPks
+                    .filter { it.tableName == tableName }
+                    .map { g -> Pair(table.columns.find {c -> c.name == g.name}!!, g.uniqueId) }.toMap()
+
+            if(colMap.isNotEmpty()){
+                val id = counter++
+                selection.add(DbAction(
+                        table,
+                        colMap.keys.toHashSet(),
+                        id,
+                        colMap.map { SqlPrimaryKeyGene(
+                                it.key.name,
+                                tableName,
+                                ImmutableDataHolderGene(it.key.name, it.value.toString(), it.key.type.shouldBePrintedInQuotes()),
+                                it.value
+                        ) },
+                        true))
+            }
+        }
+
+
+        return selection
     }
 }

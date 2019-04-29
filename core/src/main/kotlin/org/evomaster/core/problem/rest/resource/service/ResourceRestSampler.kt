@@ -270,10 +270,12 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
         }
 
         if (!restCalls.isEmpty()) {
-            return if(config.enableTrackIndividual || config.enableTrackEvaluatedIndividual){
-                ResourceRestIndividual(restCalls,SampleType.SMART_RESOURCE, trackOperator = this,
+            val individual= if(config.enableTrackIndividual || config.enableTrackEvaluatedIndividual){
+                ResourceRestIndividual(restCalls,if(withDependency)SampleType.SMART_RESOURCE_WITH_DEP else SampleType.SMART_RESOURCE_WITHOUT_DEP, trackOperator = this,
                         traces = if(config.enableTrackIndividual) mutableListOf() else null)
-            }else ResourceRestIndividual(restCalls,SampleType.SMART_RESOURCE)
+            }else ResourceRestIndividual(restCalls,if(withDependency) SampleType.SMART_RESOURCE_WITH_DEP else SampleType.SMART_RESOURCE_WITHOUT_DEP)
+            individual.repairDBActions()
+            return individual
         }
 
         return sampleAtRandom()

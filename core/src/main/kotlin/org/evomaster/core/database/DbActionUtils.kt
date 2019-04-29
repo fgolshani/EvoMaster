@@ -1,11 +1,14 @@
 package org.evomaster.core.database
 
+import org.apache.commons.lang3.mutable.Mutable
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.SqlForeignKeyGene
 import org.evomaster.core.search.gene.SqlPrimaryKeyGene
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.Lazy
+import org.evomaster.core.database.schema.Column
+import org.evomaster.core.database.schema.Table
 
 object DbActionUtils {
 
@@ -285,6 +288,22 @@ object DbActionUtils {
         } else {
             g.getValueAsPrintableString(all)
         }
+    }
+
+    fun repairFK(dbAction: DbAction, previous : MutableList<DbAction>) : MutableList<SqlPrimaryKeyGene>{
+        val repaired = mutableListOf<SqlPrimaryKeyGene>()
+        if(dbAction.table.foreignKeys.isEmpty())
+            return repaired
+
+        val pks = previous.flatMap { it.seeGenes() }.filter { it is SqlPrimaryKeyGene }
+        dbAction.seeGenes().filter { it is SqlForeignKeyGene }.forEach { fk->
+            pks.find { pk -> (pk as SqlPrimaryKeyGene).tableName == (fk as SqlForeignKeyGene).targetTable && pk.uniqueId != fk.uniqueIdOfPrimaryKey }?.let {
+                (fk as SqlForeignKeyGene).uniqueIdOfPrimaryKey = (it as SqlPrimaryKeyGene).uniqueId
+                repaired.add(it as SqlPrimaryKeyGene)
+            }
+        }
+        return repaired
+
     }
 
 

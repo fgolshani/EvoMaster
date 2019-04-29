@@ -32,7 +32,7 @@ class ResourceRestIndividual (
     override fun canMutateStructure(): Boolean {
         return sampleType == SampleType.RANDOM ||
                 sampleType == SampleType.SMART_GET_COLLECTION ||
-                sampleType == SampleType.SMART_RESOURCE
+                sampleType == SampleType.SMART_RESOURCE_WITHOUT_DEP
     }
 
     override fun seeActions(): List<out Action> = resourceCalls.flatMap { it.actions }
@@ -124,6 +124,25 @@ class ResourceRestIndividual (
         if (!verifyInitializationActions()) {
             DbActionUtils.repairBrokenDbActionsList(dbInitialization, randomness)
             Lazy.assert{verifyInitializationActions()}
+        }
+    }
+
+    fun repairDBActions(){
+        val previousDbActions = mutableListOf<DbAction>()
+
+        getResourceCalls().forEach {
+            if (it.dbActions.isNotEmpty()){
+                if(!DbActionUtils.verifyActions(it.dbActions) || !DbActionUtils.verifyActions(previousDbActions.plus(it.dbActions))){
+
+                    it.dbActions.forEach { db->
+                        DbActionUtils.repairFK(db, previousDbActions)
+                        previousDbActions.add(db)
+                    }
+
+                }else{
+                    previousDbActions.addAll(it.dbActions)
+                }
+            }
         }
     }
 

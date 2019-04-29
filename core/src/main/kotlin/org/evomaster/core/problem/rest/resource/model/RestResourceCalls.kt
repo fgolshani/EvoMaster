@@ -10,12 +10,12 @@ import org.evomaster.core.search.impact.ImpactUtil
 /**
  * the class is used to structure actions regarding resources.
  * @property template is a resource template, e.g., POST-GET
- * @property resource presents a resource that [actions] perform on. [resource] is an instance of [RestAResource]
+ * @property resourceInstance presents a resource that [actions] perform on. [resourceInstance] is an instance of [RestResource]
  * @property actions is a sequence of actions in the [RestResourceCalls] that follows [template]
  */
 class RestResourceCalls(
         val template: CallsTemplate,
-        val resource: RestResource,
+        val resourceInstance: RestResourceInstance,
         val actions: MutableList<RestAction>
 ){
 
@@ -32,7 +32,7 @@ class RestResourceCalls(
     var status = ResourceStatus.NOT_FOUND
 
     fun copy() : RestResourceCalls{
-        val copy = RestResourceCalls(template, resource.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())
+        val copy = RestResourceCalls(template, resourceInstance.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())
         if(dbActions.isNotEmpty()){
             dbActions.forEach { db->
                 copy.dbActions.add(db.copy() as DbAction)

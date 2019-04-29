@@ -2,9 +2,11 @@ package org.evomaster.core.problem.rest.resource.service
 
 
 import com.google.inject.Inject
+import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.DbActionTransformer
 import org.evomaster.core.problem.rest.RestAction
 import org.evomaster.core.problem.rest.RestCallAction
+import org.evomaster.core.problem.rest.SampleType
 import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
 import org.evomaster.core.problem.rest.resource.model.RestResourceCalls
 import org.evomaster.core.problem.rest.service.AbstractRestFitness
@@ -22,6 +24,9 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
 
     @Inject
     private lateinit var sampler : ResourceRestSampler
+
+    @Inject
+    private lateinit var rm: ResourceManageService
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(ResourceRestFitness::class.java)
@@ -43,13 +48,14 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
 
         //run the test, one action at a time
         var indexOfAction = 0
+
+        if(individual.sampleType == SampleType.SMART_RESOURCE_WITH_DEP)
+            doInitializingCalls(individual.getResourceCalls().flatMap { it.dbActions })
+
         for (call in individual.getResourceCalls()) {
 
-//            if(call.doesCompareDB)
-//                rm.snapshotDB()
-
-            doInitializingCalls(call)
-            //TODO shall we bind actions with data from db after dbactions.
+            if(individual.sampleType == SampleType.SMART_RESOURCE_WITHOUT_DEP)
+                doInitializingCalls(call.dbActions)
 
             for (a in call.actions){
                 rc.registerNewAction(indexOfAction)
@@ -68,14 +74,6 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
                 indexOfAction++
             }
 
-//            if(call.doesCompareDB){
-//                /*
-//                    TODO Man: 1) check whether data is changed regarding actions. Note that call.dbaction saved previous data of row of all columned
-//                              2) if only check only one row regarding pks and its related table instead of all tables
-//                 */
-//                rm.compareDB(call)
-//            }
-
         }
 
         /*
@@ -91,6 +89,8 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
             log.warn("Cannot retrieve coverage")
             return null
         }
+
+        rm.updateResourceTables(individual, dto)
 
         dto.targets.forEach { t ->
 
@@ -117,20 +117,27 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
          */
     }
 
-    private fun doInitializingCalls(calls: RestResourceCalls) {
+    private fun doInitializingCalls(allDbActions : List<DbAction>) {
 
-        if (calls.dbActions.isEmpty()) {
+        if (allDbActions.isEmpty()) {
             return
         }
-        val actions = calls.dbActions.filter { !it.representExistingData }
 
-        if(actions.isNotEmpty()){
-            val dto = DbActionTransformer.transform(actions)
+        if (allDbActions.none { !it.representExistingData }) {
+            /*
+                We are going to do an initialization of database only if there
+                is data to add.
+                Note that current data structure also keeps info on already
+                existing data (which of course should not be re-inserted...)
+             */
+            return
+        }
 
-            val ok = rc.executeDatabaseCommand(dto)
-            if (!ok) {
-                log.warn("Failed in executing database command")
-            }
+        val dto = DbActionTransformer.transform(allDbActions)
+
+        val ok = rc.executeDatabaseCommand(dto)
+        if (!ok) {
+            log.warn("Failed in executing database command")
         }
     }
 
