@@ -1,5 +1,8 @@
 package org.evomaster.core.problem.rest.resource.model.dependency
 
+import edu.stanford.nlp.time.SUTime
+import org.evomaster.core.problem.rest.resource.db.SQLKey
+
 /**
  * key relies on target
  */
@@ -36,14 +39,52 @@ open class RelatedTo(
  * @property key is name of param in a resource path
  * @property targets each element is a name of table
  */
-class ParamRelatedToTable (key: String, target: MutableList<String>, probability: Double, info: String="")
-    :RelatedTo(key, target, probability, info){
+class ParamRelatedToTable (
+        key: String,
+        target: MutableList<String>,
+        probability: Double,
+        info: String=""
+):RelatedTo(key, target, probability, info){
 
     companion object {
         fun getNotateKey(paramName : String): String = "PARM:$paramName"
     }
 
     override fun notateKey() : String = getNotateKey(originalKey())
+}
+
+class ActionRelatedToTable(
+        key: String,
+        val tableWithFields: MutableMap<String, MutableList<AccessTable>> = mutableMapOf()
+): RelatedTo(key, tableWithFields.keys.toMutableList(), 1.0, "") {
+
+    fun updateTableWithFields(results : Map<String, Set<String>>, method: SQLKey) {
+        var doesUpdateTarget = false
+        results.forEach { t, u ->
+            doesUpdateTarget = doesUpdateTarget || tableWithFields.containsKey(t)
+            tableWithFields.getOrPut(t){ mutableListOf() }.run {
+                var target = find { it.method == method }
+                if (target == null){
+                    target = AccessTable(method, t, mutableSetOf())
+                    this.add(target)
+                }
+                target!!.field.addAll(u)
+            }
+        }
+        if(doesUpdateTarget){
+            targets.clear()
+            (targets as MutableList<String>).addAll(tableWithFields.keys)
+        }
+    }
+
+    //fun getTableWithFields() : Map<String, MutableList<AccessTable>> = tableWithFields.toMap()
+
+    fun doesSubsume(tables : List<String>, subsumeThis : Boolean) : Boolean{
+        return if(subsumeThis) tables.toHashSet().containsAll(tableWithFields.keys)
+                else tableWithFields.keys.containsAll(tables)
+    }
+
+    class AccessTable(val method : SQLKey, val table : String, val field : MutableSet<String>)
 }
 
 /**

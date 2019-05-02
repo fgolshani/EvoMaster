@@ -82,9 +82,10 @@ class SQLGenerator{
 
 enum class SQLKey(val key : String){
     SELECT("SELECT"),
-//    UPDATE("UPDATE"),
-//    DELETE("DELETE"),
-//    INSERT("INSERT"),
+    UPDATE("UPDATE"),
+    DELETE("DELETE"),
+    INSERT("INSERT"),
+
     WHERE("WHERE"),
     FROM("FROM"),
     ALL("*"),

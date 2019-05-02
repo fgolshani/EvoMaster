@@ -2,6 +2,7 @@ package org.evomaster.core.problem.rest.resource.service
 
 import com.google.inject.Inject
 import org.evomaster.client.java.controller.api.dto.TestResultsDto
+import org.evomaster.client.java.controller.api.dto.database.execution.ExecutionDto
 import org.evomaster.client.java.controller.api.dto.database.operations.DataRowDto
 import org.evomaster.core.EMConfig
 import org.evomaster.core.database.DbAction
@@ -73,11 +74,16 @@ class ResourceManageService {
      */
     private val dependencies : MutableMap<String, MutableList<ResourceRelatedToResources>> = mutableMapOf()
 
+    private var flagInitDep = false
+
     fun initAbstractResources(actionCluster : MutableMap<String, Action>) {
         actionCluster.values.forEach { u ->
             if (u is RestCallAction) {
                 val resource = resourceCluster.getOrPut(u.path.toString()) {
-                    RestResource(u.path.copy(), mutableListOf())
+                    RestResource(u.path.copy(), mutableListOf()).also {
+                        if (config.doesApplyTokenParser)
+                            it.initTokens()
+                    }
                 }
                 resource.actions.add(u)
             }
@@ -93,17 +99,30 @@ class ResourceManageService {
                 The derived db creation needs to be further confirmed based on feedback from evomaster driver (NOT IMPLEMENTED YET)
              */
             resourceCluster.values.forEach {ar->
-                if(ar.paramsToTables.isEmpty())
+                if(ar.paramsToTables.isEmpty() && config.doesApplyTokenParser)
                     deriveRelatedTables(ar,false)
             }
         }
 
-        if(config.probOfEnablingResourceDependencyHeuristics > 0.0)
+        if(config.doesApplyTokenParser)
             initDependency()
 
     }
 
-    private fun initDependency(){
+    /**
+     * [resourceTables] and [RestResource.paramsToTables] are basic ingredients for an initialization of [dependencies]
+     * thus, the starting point to invoke [initDependency] depends on when the ingredients are ready.
+     *
+     * if [EMConfig.doesApplyTokenParser] the invocation happens when init resource cluster,
+     * else the invocation happens when all ad-hoc individuals are executed
+     *
+     * Note that it can only be executed one time
+     */
+    fun initDependency(){
+        if(config.probOfEnablingResourceDependencyHeuristics == 0.0 || flagInitDep) return
+
+        flagInitDep = true
+
         //1. based on resourceTables to identify mutual relations among resources
         updateDependency()
 
@@ -443,6 +462,7 @@ class ResourceManageService {
     }
 
     /**
+     * update dependencies based on derived info
      * [additionalInfo] is structure mutator in this context
      */
     private fun updateDependencies(key : String, target : MutableList<String>, additionalInfo : String, probability : Double = 1.0){
@@ -536,7 +556,7 @@ class ResourceManageService {
      * this function is used to initialized ad-hoc individuals
      */
     fun createAdHocIndividuals(auth: AuthenticationInfo, adHocInitialIndividuals : MutableList<ResourceRestIndividual>){
-        val sortedResources = resourceCluster.values.sortedByDescending { it.tokens.size }.asSequence()
+        val sortedResources = resourceCluster.values.sortedByDescending { it.path.levels() }.asSequence()
 
         //GET, PATCH, DELETE
         sortedResources.forEach { ar->
@@ -863,11 +883,27 @@ class ResourceManageService {
      * update [resourceTables] based on test results from SUT/EM
      */
     fun updateResourceTables(resourceRestIndividual: ResourceRestIndividual, dto : TestResultsDto){
-        //TODO until [dto] has these info
+
+        resourceRestIndividual.seeActions().forEachIndexed { index, action ->
+            val dbDto = dto.extraHeuristics[index].databaseExecutionDto
+
+            if(action is RestCallAction){
+                val resourceId = action.path.toString()
+                val verb = action.verb.toString()
+
+                val update = resourceCluster[resourceId]!!.updateActionRelatedToTable(verb, dbDto)
+                resourceTables.getOrPut(resourceId){ mutableSetOf()}.addAll(resourceCluster[resourceId]!!.getRelatedTables())
+
+                if(update){
+                    //TODO update dependencies once any update on resourceTables or paramToTables
+                }
+            }
+        }
+
     }
 
     private fun handleCallWithDBAction(ar: RestResource, call: RestResourceCalls, forceInsert : Boolean, forceSelect : Boolean) : Boolean{
-        //TODO whether we need to check the similarity of the param name at this stage?
+
         if(ar.paramsToTables.values.find { it.probability < ParserUtil.SimilarityThreshold || it.targets.isEmpty()} == null){
             var failToLinkWithResource = false
 
@@ -1007,10 +1043,6 @@ class ResourceManageService {
         return true
     }
 
-    /**
-     * since only insertion and selection are applied for manipulating resource,
-     * we executed all dbaction for an individual together instead of separately regarding each resource.
-     */
     private fun bindCallWithOtherDBAction(call : RestResourceCalls, dbActions: MutableList<DbAction>){
         val dbRelatedToTables = dbActions.map { it.table.name }.toMutableList()
         val dbTables = call.dbActions.map { it.table.name }.toMutableList()
@@ -1033,7 +1065,9 @@ class ResourceManageService {
         val paramsToBind =
                 call.actions.filter { (it is RestCallAction) && it.verb != HttpVerb.POST }
                         .flatMap { (it as RestCallAction).parameters.map { p-> ParamRelatedToTable.getNotateKey(p.name.toLowerCase()).toLowerCase()  } }
+
         val targets = call.resourceInstance.ar.paramsToTables.filter { paramsToBind.contains(it.key.toLowerCase())}
+
         val tables = targets.map { it.value.targets.first().toString() }.toHashSet()
 
         tables.forEach { tableName->
@@ -1043,6 +1077,7 @@ class ResourceManageService {
                 bindCallActionsWithDBAction(ps, call, listOf(relatedDbActions), true)
             }
         }
+
     }
 
     private fun bindCallActionsWithDBAction(ps: List<String>, call: RestResourceCalls, dbActions : List<DbAction>, bindParamBasedOnDB : Boolean = false){

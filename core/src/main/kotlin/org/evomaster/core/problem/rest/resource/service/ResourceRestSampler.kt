@@ -239,6 +239,11 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
             return ind
         }
 
+        /*
+            init dependencies after all ad-hoc individual are executed
+         */
+        rm.initDependency()
+
         val restCalls = mutableListOf<RestResourceCalls>()
 
         val withDependency = config.probOfEnablingResourceDependencyHeuristics > 0.0

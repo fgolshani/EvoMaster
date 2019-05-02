@@ -1,10 +1,11 @@
 package org.evomaster.core.problem.rest.resource.model
 
+import org.evomaster.client.java.controller.api.dto.database.execution.ExecutionDto
 import org.evomaster.core.problem.rest.*
-import org.evomaster.core.problem.rest.auth.AuthenticationInfo
 import org.evomaster.core.problem.rest.param.BodyParam
 import org.evomaster.core.problem.rest.param.Param
-import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
+import org.evomaster.core.problem.rest.resource.db.SQLKey
+import org.evomaster.core.problem.rest.resource.model.dependency.ActionRelatedToTable
 import org.evomaster.core.problem.rest.resource.model.dependency.CreationChain
 import org.evomaster.core.problem.rest.resource.model.dependency.ParamRelatedToTable
 import org.evomaster.core.problem.rest.resource.util.ParamUtil
@@ -21,8 +22,7 @@ import org.slf4j.LoggerFactory
  */
 class RestResource(
         val path : RestPath,
-        val actions: MutableList<RestAction>,
-        withTokens : Boolean = false
+        val actions: MutableList<RestAction>
 ) {
 
     companion object {
@@ -38,15 +38,32 @@ class RestResource(
      */
     private val ancestors : MutableList<RestResource> = mutableListOf()
 
+    /**
+     * POST methods for creating available resource for the rest actions
+     */
     var postCreation : CreationChain = CreationChain(mutableListOf(), false)
 
+    /**
+     * derived relationship between param of actions and tables
+     *
+     * key is param
+     * value is related tables
+     */
     val paramsToTables : MutableMap<String, ParamRelatedToTable> = mutableMapOf()
+
+
+    /**
+     * key is verb of the action
+     * value is related table with its fields
+     *
+     * Note that same action may execute different SQL commends due to e.g., cookies or different values
+     * When updating [actionToTables], we check if existing [ActionRelatedToTable] subsumes [ExecutionDto] or [ExecutionDto] subsume [ActionRelatedToTable] regarding involved tables.
+     * if subsumed, we update existing [ActionRelatedToTable]; else create [ActionRelatedToTable]
+     */
+    val actionToTables : MutableMap<String, MutableList<ActionRelatedToTable>> = mutableMapOf()
 
     val tokens : MutableMap<String, PathRToken> = mutableMapOf()
 
-    init {
-        initTokens()
-    }
     /**
      * HTTP methods under the resource, including possible POST in its ancestors'
      *
@@ -101,7 +118,7 @@ class RestResource(
 
     }
 
-    private fun initTokens(){
+    fun initTokens(){
         if(path.getStaticTokens().isNotEmpty()){
             tokens.clear()
             ParserUtil.parsePathTokens(this.path.toString(), tokens)
@@ -146,6 +163,99 @@ class RestResource(
         assert(templates.isNotEmpty())
 
     }
+
+    fun updateActionRelatedToTable(verb : String, dto: ExecutionDto) : Boolean{
+        val tables = mutableListOf<String>().plus(dto.deletedData).plus(dto.updatedData.keys).plus(dto.insertedData.keys).plus(dto.queriedData.keys)
+        if (tables.isEmpty()) return false
+
+        var access = actionToTables
+                .getOrPut(verb){ mutableListOf()}
+                .find { it.doesSubsume(tables, true) || it.doesSubsume(tables, false)}
+
+        val doesUpdateParamTable = (access == null)
+
+        if(access== null){
+            access = ActionRelatedToTable(verb)
+            actionToTables[verb]!!.add(access)
+        }
+
+        access.updateTableWithFields(dto.deletedData.map { Pair(it, mutableSetOf<String>()) }.toMap(), SQLKey.DELETE)
+        access.updateTableWithFields(dto.insertedData, SQLKey.INSERT)
+        access.updateTableWithFields(dto.queriedData, SQLKey.SELECT)
+        access.updateTableWithFields(dto.updatedData, SQLKey.UPDATE)
+
+        if(doesUpdateParamTable || actionToTables.size < actions.filter { it is RestCallAction }.size)
+            updateParamToTable()
+
+        return doesUpdateParamTable
+    }
+
+    private fun updateParamToTable(){
+        actions.forEach {action->
+            if(action is RestCallAction){
+                action.parameters.forEach { param ->
+                    val tables = actionToTables[action.verb.toString()]
+                    if(tables != null && tables.isNotEmpty()){
+
+                        val tableScore = mutableMapOf<String, Double>()
+
+                        tables.forEach { rt->
+                            rt.tableWithFields.forEach { tab, fields ->
+                                val score = ParserUtil.stringSimilarityScore(param.name, tab)
+                                val current = tableScore.getOrPut(tab){0.0}
+                                if(score > current){
+                                    tableScore.replace(tab, score)
+                                }
+
+                                fields.forEach { f ->
+                                    f.field.forEach { ff ->
+                                        val scoref = ParserUtil.stringSimilarityScore(param.name, ff)
+                                        val currentf = tableScore.getOrPut(tab){0.0}
+                                        if(scoref > currentf){
+                                            tableScore.replace(tab, scoref)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+
+                        if(tableScore.isNotEmpty()){
+                            val best = tableScore.values.max()!!
+                            if(best > ParserUtil.SimilarityThreshold){
+                                val tables = tableScore.filter { it.value == best }.keys
+                                var ptoTable = paramsToTables.get(ParamRelatedToTable.getNotateKey(param.name))
+                                if(ptoTable == null){
+                                    ptoTable = ParamRelatedToTable(param.name, tables.toMutableList(), best)
+                                    paramsToTables.put(ptoTable.notateKey(), ptoTable)
+                                }else if(ptoTable.additionalInfo.isNotBlank()){
+                                    /*
+                                        use dto instead of derived based on tokens
+                                     */
+                                    ptoTable = ParamRelatedToTable(param.name, tables.toMutableList(), best)
+                                    paramsToTables.replace(ptoTable.notateKey(), ptoTable)
+                                }else{
+                                    if(!ptoTable.targets.containsAll(tables)){
+                                        tables.filter { !ptoTable.targets.contains(it) }.forEach { n->
+                                            (ptoTable.targets as MutableList<String>).add(n)
+                                        }
+                                    }
+                                    if(best > ptoTable.probability)
+                                        ptoTable.probability = best
+                                }
+                            }
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+
+    fun getRelatedTables() : Set<String> = actionToTables.values.flatMap { it.flatMap { a -> a.tableWithFields.keys } }.toSet()
+
+    fun getRelatedTables(action: RestCallAction) : Set<String>? = actionToTables[action.verb.toString()]?.flatMap{  a -> a.tableWithFields.keys  }?.toSet()
+
 
     //if only get
     fun isIndependent() : Boolean{
@@ -286,7 +396,7 @@ class RestResource(
             result.add(ac)
             isCreated = createResourcesFor(ac, result, maxTestSize , randomness, checkSize)
             if(result.size != postCreation.actions.size + (if(nonPostIndex == -1) 0 else 1)){
-                println("post creation is wrong")
+                log.warn("post creation is wrong")
             }
             val lastPost = result.last()
             resourceInstance = RestResourceInstance(this, (lastPost as RestCallAction).parameters)

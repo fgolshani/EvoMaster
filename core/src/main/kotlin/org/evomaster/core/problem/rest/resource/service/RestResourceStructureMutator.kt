@@ -85,7 +85,6 @@ class RestResourceStructureMutator : StructureMutator() {
         val fromDependency = rm.isDependencyNotEmpty()
                 && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
 
-        //FIXME
         var call = if(fromDependency){
                         rm.handleAddDepResource(ind, max)
                     }else null
