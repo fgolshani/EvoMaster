@@ -783,7 +783,7 @@ class ResourceManageService {
                     val resourceId = action.path.toString()
                     val verb = action.verb.toString()
 
-                    val update = resourceCluster[resourceId]!!.updateActionRelatedToTable(verb, dbDto)
+                    val update = resourceCluster[resourceId]!!.updateActionRelatedToTable(verb, dbDto, dataInDB.keys)
                     val curRelated = resourceCluster[resourceId]!!.getConfirmedRelatedTables()
                     if(update || curRelated.isNotEmpty()){
                         resourceTables.getOrPut(resourceId){ mutableSetOf()}.apply {
@@ -900,12 +900,20 @@ class ResourceManageService {
         }
 
         if(dbActions.isNotEmpty()){
-            dbActions.removeIf { select->
-                select.representExistingData && dbActions.find { !it.representExistingData && select.table.name == it.table.name } != null
+            val removedDbAction = mutableListOf<DbAction>()
+
+            dbActions.map { it.table.name }.groupingBy { it }.eachCount().filter { it.value > 1 }.keys.forEach {tableName->
+                removedDbAction.addAll(call.dbActions.filter { it.table.name == tableName }.run { this.subList(1, this.size) })
             }
 
-            DbActionUtils.randomizeDbActionGenes(dbActions.filter { !it.representExistingData }, randomness)
-            repairDbActions(dbActions.filter { !it.representExistingData }.toMutableList())
+
+            if(removedDbAction.isNotEmpty()){
+                dbActions.removeAll(removedDbAction)
+                repairDbActions(dbActions)
+            }
+
+            DbActionUtils.randomizeDbActionGenes(dbActions, randomness)
+            //repairDbActions(dbActions.filter { !it.representExistingData }.toMutableList())
 
             bindCallWithDBAction(call, dbActions)
 

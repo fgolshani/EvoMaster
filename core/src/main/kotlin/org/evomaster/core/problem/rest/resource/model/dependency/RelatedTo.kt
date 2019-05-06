@@ -90,7 +90,7 @@ class ActionRelatedToTable(
 
     //fun getTableWithFields() : Map<String, MutableList<AccessTable>> = tableWithFields.toMap()
 
-    fun doesSubsume(tables : List<String>, subsumeThis : Boolean) : Boolean{
+    fun doesSubsume(tables : Set<String>, subsumeThis : Boolean) : Boolean{
         return if(subsumeThis) tables.toHashSet().containsAll(tableWithFields.keys)
                 else tableWithFields.keys.containsAll(tables)
     }

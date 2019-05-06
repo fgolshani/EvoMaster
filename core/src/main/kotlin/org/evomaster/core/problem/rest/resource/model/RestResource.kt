@@ -165,8 +165,10 @@ class RestResource(
 
     }
 
-    fun updateActionRelatedToTable(verb : String, dto: ExecutionDto) : Boolean{
+    fun updateActionRelatedToTable(verb : String, dto: ExecutionDto, existingTables : Set<String>) : Boolean{
         val tables = mutableListOf<String>().plus(dto.deletedData).plus(dto.updatedData.keys).plus(dto.insertedData.keys).plus(dto.queriedData.keys)
+                .filter { existingTables.contains(it) }.toHashSet()
+
         if (tables.isEmpty()) return false
 
         var access = actionToTables
