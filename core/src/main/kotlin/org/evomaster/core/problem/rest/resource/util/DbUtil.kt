@@ -10,7 +10,7 @@ class DbUtil {
             based on the results, relationship between resource and table can be built.
         2) with the search, the relationship (resource -> table) can be further
      */
-//        fun compareDB(call : RestResourceCalls){
+//        fun compareDB(call : ResourceRestCalls){
 //
 //            if(hasDBHandler()){
 //                assert(call.doesCompareDB)

@@ -15,6 +15,7 @@ import org.evomaster.core.search.Action
 import org.evomaster.core.search.service.Randomness
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import kotlin.math.max
 
 /**
  * @property path resource path
@@ -200,6 +201,7 @@ class RestResource(
                         val tableScore = mutableMapOf<String, Double>()
 
                         tables.forEach { rt->
+                            //TODO handle the situation whereby field is *
                             rt.tableWithFields.forEach { tab, fields ->
                                 val score = ParserUtil.stringSimilarityScore(param.name, tab)
                                 val current = tableScore.getOrPut(tab){0.0}
@@ -223,25 +225,27 @@ class RestResource(
                         if(tableScore.isNotEmpty()){
                             val best = tableScore.values.max()!!
                             if(best > ParserUtil.SimilarityThreshold){
-                                val tables = tableScore.filter { it.value == best }.keys
+                                val tables = tableScore.filter { it.value == best }
                                 var ptoTable = paramsToTables.get(ParamRelatedToTable.getNotateKey(param.name))
                                 if(ptoTable == null){
-                                    ptoTable = ParamRelatedToTable(param.name, tables.toMutableList(), best)
+                                    ptoTable = ParamRelatedToTable(param.name, tables.keys.toMutableList(), best)
                                     paramsToTables.put(ptoTable.notateKey(), ptoTable)
-                                }else if(ptoTable.additionalInfo.isNotBlank()){
-                                    /*
-                                        use dto instead of derived based on tokens
-                                     */
-                                    ptoTable = ParamRelatedToTable(param.name, tables.toMutableList(), best)
-                                    paramsToTables.replace(ptoTable.notateKey(), ptoTable)
+
                                 }else{
-                                    if(!ptoTable.targets.containsAll(tables)){
-                                        tables.filter { !ptoTable.targets.contains(it) }.forEach { n->
+                                    if(!ptoTable.targets.containsAll(tables.keys)){
+                                        tables.keys.filter { !ptoTable.targets.contains(it) }.forEach { n->
                                             (ptoTable.targets as MutableList<String>).add(n)
                                         }
                                     }
                                     if(best > ptoTable.probability)
                                         ptoTable.probability = best
+                                }
+
+                                tables.forEach { t, u ->
+                                    if(ptoTable.confirmedMap.containsKey(t))
+                                        ptoTable.confirmedMap.replace(t, max(u, ptoTable.confirmedMap[t]!!))
+                                    else
+                                        ptoTable.confirmedMap.put(t, u)
                                 }
                             }
                         }
@@ -252,9 +256,9 @@ class RestResource(
         }
     }
 
-    fun getRelatedTables() : Set<String> = actionToTables.values.flatMap { it.flatMap { a -> a.tableWithFields.keys } }.toSet()
+    fun getConfirmedRelatedTables() : Set<String> = actionToTables.values.flatMap { it.flatMap { a -> a.tableWithFields.keys } }.toSet()
 
-    fun getRelatedTables(action: RestCallAction) : Set<String>? = actionToTables[action.verb.toString()]?.flatMap{  a -> a.tableWithFields.keys  }?.toSet()
+    fun getConfirmedRelatedTables(action: RestCallAction) : Set<String>? = actionToTables[action.verb.toString()]?.flatMap{ a -> a.tableWithFields.keys  }?.toSet()
 
 
     //if only get
@@ -275,8 +279,8 @@ class RestResource(
             }
         }
     }
-    fun generateAnother(calls : RestResourceCalls, randomness: Randomness, maxTestSize: Int) : RestResourceCalls?{
-        val current = calls.actions.map { (it as RestCallAction).verb }.joinToString(RTemplateHandler.SeparatorTemplate)
+    fun generateAnother(restCalls : ResourceRestCalls, randomness: Randomness, maxTestSize: Int) : ResourceRestCalls?{
+        val current = restCalls.actions.map { (it as RestCallAction).verb }.joinToString(RTemplateHandler.SeparatorTemplate)
         val rest = templates.filterNot { it.key == current }
         if(rest.isEmpty()) return null
         val selected = randomness.choose(rest.keys)
@@ -312,7 +316,7 @@ class RestResource(
     }
 
 
-    fun randomRestResourceCalls(randomness: Randomness, maxTestSize: Int): RestResourceCalls{
+    fun randomRestResourceCalls(randomness: Randomness, maxTestSize: Int): ResourceRestCalls{
         val randomTemplates = templates.filter { e->
             e.value.size in 1..maxTestSize
         }.map { it.key }
@@ -320,7 +324,7 @@ class RestResource(
         return genCalls(randomness.choose(randomTemplates), randomness, maxTestSize)
     }
 
-    fun sampleIndResourceCall(randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
+    fun sampleIndResourceCall(randomness: Randomness, maxTestSize: Int) : ResourceRestCalls{
         selectTemplate({ call : CallsTemplate -> call.independent || (call.template == HttpVerb.POST.toString() && call.size > 1)}, randomness)?.let {
             return genCalls(it.template, randomness, maxTestSize, false, false)
         }
@@ -328,30 +332,30 @@ class RestResource(
     }
 
 
-    fun sampleOneAction(verb : HttpVerb? = null, randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
+    fun sampleOneAction(verb : HttpVerb? = null, randomness: Randomness, maxTestSize: Int) : ResourceRestCalls{
         val al = if(verb != null) getActionByHttpVerb(actions, verb) else randomness.choose(actions).copy() as RestAction
         return sampleOneAction(al!!, randomness, maxTestSize)
     }
 
-    fun sampleOneAction(action : RestAction, randomness: Randomness, maxTestSize: Int = 1) : RestResourceCalls{
+    fun sampleOneAction(action : RestAction, randomness: Randomness, maxTestSize: Int = 1) : ResourceRestCalls{
         val copy = action.copy()
         randomizeActionGenes(copy as RestCallAction, randomness)
 
         val template = templates[copy.verb.toString()]
                 ?: throw IllegalArgumentException("${copy.verb} is not one of templates of ${this.path.toString()}")
-        val call =  RestResourceCalls(template, RestResourceInstance(this, copy.parameters), mutableListOf(copy))
+        val call =  ResourceRestCalls(template, RestResourceInstance(this, copy.parameters), mutableListOf(copy))
         if(action is RestCallAction && action.verb == HttpVerb.POST){
             if(postCreation.actions.size > 1 || !postCreation.isComplete()){
-                call.status = RestResourceCalls.ResourceStatus.NOT_FOUND_DEPENDENT
+                call.status = ResourceRestCalls.ResourceStatus.NOT_FOUND_DEPENDENT
             }else
-                call.status = RestResourceCalls.ResourceStatus.CREATED
+                call.status = ResourceRestCalls.ResourceStatus.CREATED
         }else
-            call.status = RestResourceCalls.ResourceStatus.NOT_EXISTING
+            call.status = ResourceRestCalls.ResourceStatus.NOT_EXISTING
 
         return call
     }
 
-    fun sampleAnyRestResourceCalls(randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
+    fun sampleAnyRestResourceCalls(randomness: Randomness, maxTestSize: Int) : ResourceRestCalls{
         assert(maxTestSize > 0)
         val chosen = templates.filter { it.value.size <= maxTestSize }
         if(chosen.isEmpty())
@@ -360,12 +364,12 @@ class RestResource(
     }
 
 
-    fun sampleRestResourceCalls(template: String, randomness: Randomness, maxTestSize: Int) : RestResourceCalls{
+    fun sampleRestResourceCalls(template: String, randomness: Randomness, maxTestSize: Int) : ResourceRestCalls{
         assert(maxTestSize > 0)
         return genCalls(template,randomness, maxTestSize)
     }
 
-    fun genPostChain(randomness: Randomness, maxTestSize: Int) : RestResourceCalls?{
+    fun genPostChain(randomness: Randomness, maxTestSize: Int) : ResourceRestCalls?{
         val template = templates["POST"]?:
             return null
 
@@ -379,7 +383,7 @@ class RestResource(
             maxTestSize : Int = 1,
             checkSize : Boolean = true,
             createResource : Boolean = true,
-            additionalPatch : Boolean = true) : RestResourceCalls{
+            additionalPatch : Boolean = true) : ResourceRestCalls{
         if(!templates.containsKey(template))
             throw java.lang.IllegalArgumentException("$template does not exist in ${path.toString()}")
         val ats = RTemplateHandler.parseTemplate(template)
@@ -446,23 +450,23 @@ class RestResource(
             val copy = result.get(index).copy() as RestAction
             result.add(index, copy)
         }
-        val calls = RestResourceCalls(templates[template]!!, resourceInstance!!, result)
+        val calls = ResourceRestCalls(templates[template]!!, resourceInstance!!, result)
 
         when(isCreated){
             1 ->{
-                calls.status = RestResourceCalls.ResourceStatus.NOT_EXISTING
+                calls.status = ResourceRestCalls.ResourceStatus.NOT_EXISTING
             }
             0 ->{
-                calls.status = RestResourceCalls.ResourceStatus.CREATED
+                calls.status = ResourceRestCalls.ResourceStatus.CREATED
             }
             -1 -> {
-                calls.status = RestResourceCalls.ResourceStatus.NOT_ENOUGH_LENGTH
+                calls.status = ResourceRestCalls.ResourceStatus.NOT_ENOUGH_LENGTH
             }
             -2 -> {
-                calls.status = RestResourceCalls.ResourceStatus.NOT_FOUND
+                calls.status = ResourceRestCalls.ResourceStatus.NOT_FOUND
             }
             -3 -> {
-                calls.status = RestResourceCalls.ResourceStatus.NOT_FOUND_DEPENDENT
+                calls.status = ResourceRestCalls.ResourceStatus.NOT_FOUND_DEPENDENT
             }
         }
 

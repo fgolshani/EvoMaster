@@ -6,7 +6,10 @@ import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.service.mutator.StructureMutator
 
-class RestResourceStructureMutator : StructureMutator() {
+/**
+ * resource-based structure mutator
+ */
+class ResourceRestStructureMutator : StructureMutator() {
 
     @Inject
     private lateinit var rm : ResourceManageService

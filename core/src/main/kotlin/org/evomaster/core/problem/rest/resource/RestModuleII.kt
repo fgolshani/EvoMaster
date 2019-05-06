@@ -43,18 +43,18 @@ class RestModuleII : AbstractModule(){
                 .asEagerSingleton()
 
         bind(object : TypeLiteral<Mutator<ResourceRestIndividual>>() {})
-                .to(RestResourceMutator::class.java)
+                .to(ResourceRestMutator::class.java)
                 .asEagerSingleton()
 
         bind(object : TypeLiteral<StandardMutator<ResourceRestIndividual>>() {})
-                .to(RestResourceMutator::class.java)
+                .to(ResourceRestMutator::class.java)
                 .asEagerSingleton()
 
-        bind(RestResourceMutator::class.java)
+        bind(ResourceRestMutator::class.java)
                 .asEagerSingleton()
 
         bind(StructureMutator::class.java)
-                .to(RestResourceStructureMutator::class.java)
+                .to(ResourceRestStructureMutator::class.java)
                 .asEagerSingleton()
 
         bind(ResourceManageService::class.java)

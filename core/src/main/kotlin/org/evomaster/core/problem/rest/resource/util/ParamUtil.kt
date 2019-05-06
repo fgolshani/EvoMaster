@@ -317,7 +317,7 @@ class ParamUtil {
             return maps
         }
 
-        fun bindParam(dbAction: DbAction, param : Param, previousToken: String, isExistingData : Boolean) : Boolean{
+        fun bindParam(dbAction: DbAction, param : Param, previousToken: String, existingData : Boolean) : Boolean{
             var gene  : Gene? = null
             var similarity = 0.0
             dbAction.seeGenes().forEach findGene@{
@@ -340,7 +340,7 @@ class ParamUtil {
                         If the data is existing in db, bind gene of Param according to the gene from dbaction
                         otherwise, bind gene of action according to rest action, i.e., Gene of Param
                      */
-                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), !isExistingData)
+                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), !existingData)
                 }
 
             }else

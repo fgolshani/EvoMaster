@@ -8,7 +8,7 @@ import org.evomaster.core.problem.rest.resource.db.SQLKey
  */
 open class RelatedTo(
         private val key: String,
-        val targets : MutableList<out Any>,
+        open val targets : MutableList<out Any>,
         var probability: Double,
         var additionalInfo : String = ""
 ){
@@ -36,15 +36,26 @@ open class RelatedTo(
 }
 
 /**
- * @property key is name of param in a resource path
+ * @property key is name of param in a resource
  * @property targets each element is a name of table
+ *
+ * @property confirmedMap presents whether the table are from feedback of evomaster driver.
+ *          Note that we can only get involved tables regarding rest action, not specific parameter.
+ *          So we also need use token parser to derive possible related parameter.
+ *          thus the key of [confirmedMap] is table name, and the value is similarity degree.
  */
 class ParamRelatedToTable (
         key: String,
-        target: MutableList<String>,
+        targets: MutableList<String>,
         probability: Double,
         info: String=""
-):RelatedTo(key, target, probability, info){
+):RelatedTo(key, targets, probability, info){
+
+    /**
+     * key is table name
+     * value is similarity
+     */
+    var confirmedMap : MutableMap<String, Double> = mutableMapOf()
 
     companion object {
         fun getNotateKey(paramName : String): String = "PARM:$paramName"
@@ -105,16 +116,36 @@ open class ResourceRelatedToResources(
 
 }
 /**
+ * this class presents mutual relations among resources that are derived based on tables.
+ *
  * @param info provides information that supports the resources are mutual relations of each other,
  *          e.g., the resources are related to same table, and set [info] name of the table.
+ *
+ *          Note that related table might be derived based on token parser, not confirmed regarding evomaster driver.
+ *          [confirmedSet] is used to represent whether the mutual relation is confirmed.
  */
-class MutualResourcesRelations(mutualResources: List<String>, probability: Double, info:String)
-    : ResourceRelatedToResources(mutualResources, mutualResources.toMutableList(), probability, info){
+class MutualResourcesRelations(mutualResources: List<String>, probability: Double, tables:Collection<String>)
+    : ResourceRelatedToResources(mutualResources, mutualResources.toMutableList(), probability, tables.joinToString(TABLE_SEPARATOR)){
+
+    companion object {
+        private const val TABLE_SEPARATOR = ";"
+
+    }
+    /**
+     * key is table name
+     * value is similarity
+     */
+    var confirmedSet : MutableSet<String> = mutableSetOf()
 
     override fun getName(): String {
         return "MutualRelations:${notateKey()}"
     }
 
+
+    fun getRelatedTables() : Set<String>?{
+        if(additionalInfo.isBlank()) return null
+        return additionalInfo.split(TABLE_SEPARATOR).toHashSet()
+    }
 }
 
 class SelfResourcesRelation(path : String, probability: Double = 1.0, info: String = "") : ResourceRelatedToResources(mutableListOf(path), mutableListOf(path), probability, info)

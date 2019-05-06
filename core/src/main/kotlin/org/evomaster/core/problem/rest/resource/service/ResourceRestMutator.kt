@@ -7,7 +7,11 @@ import org.evomaster.core.search.gene.*
 import org.evomaster.core.search.service.Archive
 import org.evomaster.core.search.service.mutator.StandardMutator
 
-class RestResourceMutator : StandardMutator<ResourceRestIndividual>() {
+/**
+ * resource-based mutator
+ * i.e., the standard mutator handles resource-based rest individual
+ */
+class ResourceRestMutator : StandardMutator<ResourceRestIndividual>() {
 
     @Inject
     private lateinit var rm :ResourceManageService

@@ -8,7 +8,6 @@ import org.evomaster.core.problem.rest.RestAction
 import org.evomaster.core.problem.rest.RestCallAction
 import org.evomaster.core.problem.rest.SampleType
 import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
-import org.evomaster.core.problem.rest.resource.model.RestResourceCalls
 import org.evomaster.core.problem.rest.service.AbstractRestFitness
 import org.evomaster.core.remote.service.RemoteController
 import org.evomaster.core.search.ActionResult
@@ -17,6 +16,9 @@ import org.evomaster.core.search.FitnessValue
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+/**
+ * take care of calculating/collecting fitness of [ResourceRestIndividual]
+ */
 class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
 
     @Inject
@@ -57,6 +59,8 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
             if(individual.sampleType == SampleType.SMART_RESOURCE_WITHOUT_DEP)
                 doInitializingCalls(call.dbActions)
 
+            var terminated = false
+
             for (a in call.actions){
                 rc.registerNewAction(indexOfAction)
 
@@ -69,11 +73,14 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
                 }
 
                 if (!ok) {
+                    terminated = true
                     break
                 }
                 indexOfAction++
             }
 
+            if(terminated)
+                break
         }
 
         /*

@@ -591,7 +591,12 @@ class EMConfig {
     @Cfg("Specify whether to enable resource dependency heuristics, i.e, probOfEnablingResourceDependencyHeuristics > 0.0. " +
             "Note that the option is available to be enabled only if resource-based smart sampling is enable. " +
             "This option has an effect on sampling multiple resources and mutating a structure of an individual.")
-    var probOfEnablingResourceDependencyHeuristics = 0.0
+    var probOfEnablingResourceDependencyHeuristics = 0.5
+
+    @Experimental
+    @Cfg("Specify whether to export derived dependencies among resources. " +
+            "if enabled, the dependencies are stored at the same location of generated test cases.")
+    var exportDependencies = false
 
     @Experimental
     @Cfg("Whether to involve db when applying resource-based methods, e.g., resource-based sampling.")

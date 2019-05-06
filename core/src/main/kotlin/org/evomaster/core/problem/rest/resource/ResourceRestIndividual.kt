@@ -4,7 +4,7 @@ import org.evomaster.core.Lazy
 import org.evomaster.core.database.DbAction
 import org.evomaster.core.database.DbActionUtils
 import org.evomaster.core.problem.rest.SampleType
-import org.evomaster.core.problem.rest.resource.model.RestResourceCalls
+import org.evomaster.core.problem.rest.resource.model.ResourceRestCalls
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.gene.Gene
@@ -14,7 +14,7 @@ import org.evomaster.core.search.tracer.TrackOperator
 import java.lang.IllegalArgumentException
 
 class ResourceRestIndividual (
-        private val resourceCalls: MutableList<RestResourceCalls>,
+        private val resourceRestCalls: MutableList<ResourceRestCalls>,
         val sampleType: SampleType,
         val dbInitialization: MutableList<DbAction> = mutableListOf(),
         trackOperator: TrackOperator? = null,
@@ -23,7 +23,7 @@ class ResourceRestIndividual (
 
     override fun copy(): Individual {
         return ResourceRestIndividual(
-                resourceCalls.map { it.copy() }.toMutableList(),
+                resourceRestCalls.map { it.copy() }.toMutableList(),
                 sampleType,
                 dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>
         )
@@ -35,43 +35,43 @@ class ResourceRestIndividual (
                 sampleType == SampleType.SMART_RESOURCE_WITHOUT_DEP
     }
 
-    override fun seeActions(): List<out Action> = resourceCalls.flatMap { it.actions }
+    override fun seeActions(): List<out Action> = resourceRestCalls.flatMap { it.actions }
 
     fun removeResourceCall(position : Int) {
-        if(position >= resourceCalls.size)
+        if(position >= resourceRestCalls.size)
             throw IllegalArgumentException("position is out of range of list")
-        resourceCalls.removeAt(position)
+        resourceRestCalls.removeAt(position)
     }
 
-    fun addResourceCall(position: Int, restCalls : RestResourceCalls) {
-        if(position > resourceCalls.size)
+    fun addResourceCall(position: Int, restCalls : ResourceRestCalls) {
+        if(position > resourceRestCalls.size)
             throw IllegalArgumentException("position is out of range of list")
-        resourceCalls.add(position, restCalls)
+        resourceRestCalls.add(position, restCalls)
     }
 
-    fun replaceResourceCall(position: Int, restCalls: RestResourceCalls){
-        if(position > resourceCalls.size)
+    fun replaceResourceCall(position: Int, restCalls: ResourceRestCalls){
+        if(position > resourceRestCalls.size)
             throw IllegalArgumentException("position is out of range of list")
-        resourceCalls.set(position, restCalls)
+        resourceRestCalls.set(position, restCalls)
     }
 
     fun swapResourceCall(position1: Int, position2: Int){
-        if(position1 > resourceCalls.size || position2 > resourceCalls.size)
+        if(position1 > resourceRestCalls.size || position2 > resourceRestCalls.size)
             throw IllegalArgumentException("position is out of range of list")
         if(position1 == position2)
             throw IllegalArgumentException("It is not necessary to swap two same position on the resource call list")
-        val first = resourceCalls[position1]
-        resourceCalls.set(position1, resourceCalls[position2])
-        resourceCalls.set(position2, first)
+        val first = resourceRestCalls[position1]
+        resourceRestCalls.set(position1, resourceRestCalls[position2])
+        resourceRestCalls.set(position2, first)
     }
 
     override fun seeGenesIdMap() : Map<Gene, String>{
-        return resourceCalls.flatMap { r -> r.seeGenesIdMap().map { it.key to it.value } }.toMap()
+        return resourceRestCalls.flatMap { r -> r.seeGenesIdMap().map { it.key to it.value } }.toMap()
     }
 
     override fun next(trackOperator: TrackOperator) : ResourceRestIndividual?{
         return ResourceRestIndividual(
-                resourceCalls.map { it.copy() }.toMutableList(),
+                resourceRestCalls.map { it.copy() }.toMutableList(),
                 sampleType,
                 dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
                 trackOperator,
@@ -85,7 +85,7 @@ class ResourceRestIndividual (
             else ->{
                 getTracking()?:return copy() as ResourceRestIndividual
                 return ResourceRestIndividual(
-                        resourceCalls.map { it.copy() }.toMutableList(),
+                        resourceRestCalls.map { it.copy() }.toMutableList(),
                         sampleType,
                         dbInitialization.map { d -> d.copy() as DbAction } as MutableList<DbAction>,
                         trackOperator,
@@ -95,7 +95,7 @@ class ResourceRestIndividual (
         }
     }
 
-    fun getResourceCalls() : List<RestResourceCalls> = resourceCalls.toList()
+    fun getResourceCalls() : List<ResourceRestCalls> = resourceRestCalls.toList()
 
     override fun seeGenes(filter: GeneFilter): List<out Gene> {
         return when (filter) {

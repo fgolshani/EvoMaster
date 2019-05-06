@@ -11,18 +11,13 @@ import org.evomaster.core.search.impact.ImpactUtil
  * the class is used to structure actions regarding resources.
  * @property template is a resource template, e.g., POST-GET
  * @property resourceInstance presents a resource that [actions] perform on. [resourceInstance] is an instance of [RestResource]
- * @property actions is a sequence of actions in the [RestResourceCalls] that follows [template]
+ * @property actions is a sequence of actions in the [ResourceRestCalls] that follows [template]
  */
-class RestResourceCalls(
+class ResourceRestCalls(
         val template: CallsTemplate,
         val resourceInstance: RestResourceInstance,
         val actions: MutableList<RestAction>
 ){
-
-    /**
-     * [doesCompareDB] represents whether to compare db data after executing calls
-     */
-    var doesCompareDB : Boolean = false
 
     /**
      * [dbActions] are used to initialize data for rest actions, either select from db or insert new data into db
@@ -31,15 +26,13 @@ class RestResourceCalls(
 
     var status = ResourceStatus.NOT_FOUND
 
-    fun copy() : RestResourceCalls{
-        val copy = RestResourceCalls(template, resourceInstance.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())
+    fun copy() : ResourceRestCalls{
+        val copy = ResourceRestCalls(template, resourceInstance.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())
         if(dbActions.isNotEmpty()){
             dbActions.forEach { db->
                 copy.dbActions.add(db.copy() as DbAction)
             }
         }
-        copy.doesCompareDB = doesCompareDB
-
         return copy
     }
 

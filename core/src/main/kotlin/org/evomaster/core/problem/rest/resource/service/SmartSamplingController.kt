@@ -8,6 +8,9 @@ import org.evomaster.core.search.service.SearchTimeController
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+/**
+ * dynamically determinate resource-based sample method
+ */
 class SmartSamplingController {
 
     @Inject

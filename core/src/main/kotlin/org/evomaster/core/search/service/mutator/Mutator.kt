@@ -8,7 +8,6 @@ import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.Individual
 import org.evomaster.core.search.service.*
 import org.evomaster.core.Lazy
-import org.evomaster.core.problem.rest.resource.service.RestResourceStructureMutator
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.tracer.TrackOperator
 

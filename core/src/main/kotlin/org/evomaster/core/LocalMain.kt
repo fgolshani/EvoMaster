@@ -28,7 +28,7 @@ class LocalMain {
                     //resource-based sampling
                     "--probOfSmartSampling", probOfSmartSampling.toString(),
                     "--resourceSampleStrategy",resourceSampleStrategy,
-                    "--probOfEnablingResourceDependencyHeuristics", 0.5.toString(),
+                    "--probOfEnablingResourceDependencyHeuristics", 0.0.toString(),
 
 
 //                    //archive-based mutation
@@ -39,6 +39,9 @@ class LocalMain {
                     //allowDataFromDB
                     "--doesInvolveDB", true.toString(),
                     "--probOfSelectFromDB", "0.1",
+
+                    //apply token parser
+                    "--doesApplyTokenParser","true",
 
                     //disable db
                     "--heuristicsForSQL", false.toString(),
