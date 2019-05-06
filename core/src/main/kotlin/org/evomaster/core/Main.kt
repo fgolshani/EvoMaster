@@ -42,7 +42,7 @@ class Main {
         @JvmStatic
         fun main(args: Array<String>) {
 
-//            try {
+            try {
 
                 printLogo()
                 printVersion()
@@ -72,39 +72,39 @@ class Main {
                             " learn more about available options")
                 }
 
-//            } catch (e: Exception) {
-//
-//                var cause: Throwable = e
-//                while (cause.cause != null) {
-//                    cause = cause.cause!!
-//                }
-//
-//                when (cause) {
-//                    is NoRemoteConnectionException ->
-//                        logError("ERROR: ${cause.message}" +
-//                                "\n  Make sure the EvoMaster Driver for the system under test is running correctly.")
-//
-//                    is SutProblemException ->
-//                        logError("ERROR in the Remote EvoMaster Driver: ${cause.message}" +
-//                                "\n  Look at the logs of the EvoMaster Driver to help debugging this problem.")
-//
-//                    else ->
-//                        logError("ERROR: EvoMaster process terminated abruptly. Message: " + e.message)
-//                }
-//            }
+            } catch (e: Exception) {
+
+                var cause: Throwable = e
+                while (cause.cause != null) {
+                    cause = cause.cause!!
+                }
+
+                when (cause) {
+                    is NoRemoteConnectionException ->
+                        logError("ERROR: ${cause.message}" +
+                                "\n  Make sure the EvoMaster Driver for the system under test is running correctly.")
+
+                    is SutProblemException ->
+                        logError("ERROR in the Remote EvoMaster Driver: ${cause.message}" +
+                                "\n  Look at the logs of the EvoMaster Driver to help debugging this problem.")
+
+                    else ->
+                        logError("ERROR: EvoMaster process terminated abruptly. Message: " + e.message)
+                }
+            }
         }
 
-        private fun logError(msg: String){
+        private fun logError(msg: String) {
             LoggingUtil.getInfoLogger().error(inRed("[ERROR] ") + inYellow(msg))
         }
 
-        private fun logWarn(msg: String){
+        private fun logWarn(msg: String) {
             LoggingUtil.getInfoLogger().warn(inYellow("[WARNING] ") + inYellow(msg))
         }
 
         private fun printLogo() {
 
-            val logo =  """
+            val logo = """
  _____          ___  ___          _
 |  ___|         |  \/  |         | |
 | |____   _____ | .  . | __ _ ___| |_ ___ _ __
@@ -151,8 +151,8 @@ class Main {
                 info("Passed time (seconds): ${stc.getElapsedSeconds()}")
                 info("Covered targets: ${solution.overall.coveredTargets()}")
 
-                if(config.stoppingCriterion == EMConfig.StoppingCriterion.TIME &&
-                        config.maxTimeInSeconds == config.defaultMaxTimeInSeconds){
+                if (config.stoppingCriterion == EMConfig.StoppingCriterion.TIME &&
+                        config.maxTimeInSeconds == config.defaultMaxTimeInSeconds) {
                     info(inGreen("To obtain better results, use the '--maxTimeInSeconds' option" +
                             " to run the search for longer"))
                 }
@@ -181,13 +181,13 @@ class Main {
                         .build()
                         .createInjector()
 
-            } catch (e: Error){
+            } catch (e: Error) {
                 /*
                     Workaround to Governator bug:
                     https://github.com/Netflix/governator/issues/371
                  */
-                if(e.cause != null &&
-                        InvocationTargetException::class.java.isAssignableFrom(e.cause!!.javaClass)){
+                if (e.cause != null &&
+                        InvocationTargetException::class.java.isAssignableFrom(e.cause!!.javaClass)) {
                     throw e.cause!!
                 }
 
@@ -203,6 +203,7 @@ class Main {
             rc.startANewSearch()
 
             val config = injector.getInstance(EMConfig::class.java)
+
 
             val key = when (config.algorithm) {
                 EMConfig.Algorithm.MIO -> {
@@ -228,13 +229,13 @@ class Main {
             return solution
         }
 
-        private fun checkExperimentalSettings(injector: Injector){
+        private fun checkExperimentalSettings(injector: Injector) {
 
             val config = injector.getInstance(EMConfig::class.java)
 
             val experimental = config.experimentalFeatures()
 
-            if(experimental.isEmpty()){
+            if (experimental.isEmpty()) {
                 return
             }
 
@@ -250,9 +251,8 @@ class Main {
 
             val rc = injector.getInstance(RemoteController::class.java)
 
-            val dto = rc.getControllerInfo() ?:
-                    throw IllegalStateException(
-                            "Cannot retrieve Remote Controller info from ${rc.host}:${rc.port}")
+            val dto = rc.getControllerInfo() ?: throw IllegalStateException(
+                    "Cannot retrieve Remote Controller info from ${rc.host}:${rc.port}")
 
             if (dto.isInstrumentationOn != true) {
                 LoggingUtil.getInfoLogger().warn("The system under test is running without instrumentation")
@@ -297,7 +297,7 @@ class Main {
 
             statistics.writeStatistics(solution)
 
-            if(config.snapshotInterval > 0){
+            if (config.snapshotInterval > 0) {
                 statistics.writeSnapshot()
             }
         }

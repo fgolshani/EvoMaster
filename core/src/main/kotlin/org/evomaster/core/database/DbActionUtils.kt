@@ -1,6 +1,5 @@
 package org.evomaster.core.database
 
-import org.apache.commons.lang3.mutable.Mutable
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.SqlForeignKeyGene
@@ -286,7 +285,11 @@ object DbActionUtils {
         } else if ((g is SqlPrimaryKeyGene && g.isReferenceToNonPrintable(all))) {
             "FK_REFERENCE_ " + (g.gene as SqlForeignKeyGene).uniqueIdOfPrimaryKey
         } else {
-            g.getValueAsPrintableString(all)
+            g.getValueAsPrintableString(all, targetFormat = null)
+            /*  TODO: the above code needs to be refactored to get the targetFormat from EMConfig.
+                    The target format has an impact on which characters are escaped and may result in compilation errors.
+                    The current version performs no escaping of characters by default (i.e. when the target format is null).
+            */
         }
     }
 

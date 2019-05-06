@@ -46,9 +46,8 @@ class RestFitness : AbstractRestFitness<RestIndividual>() {
     @Inject
     private lateinit var rc: RemoteController
 
-
     @Inject
-    private lateinit var sampler : RestSampler
+    private lateinit var sampler: RestSampler
 
 
     override fun doCalculateCoverage(individual: RestIndividual): EvaluatedIndividual<RestIndividual>? {

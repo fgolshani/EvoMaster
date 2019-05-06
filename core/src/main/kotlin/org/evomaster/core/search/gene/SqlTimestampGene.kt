@@ -1,5 +1,8 @@
 package org.evomaster.core.search.gene
 
+import org.evomaster.core.output.OutputFormat
+
+
 /**
  * @property date since the gene is used to handle dbaction, by default the gene should be in correct range.
  * @property time since the gene is used to handle dbaction, by default the gene should be in correct range.
@@ -27,7 +30,7 @@ class SqlTimestampGene(
             time.copy() as TimeGene
     )
 
-    override fun getValueAsPrintableString(previousGenes: List<Gene>, mode: String?): String {
+    override fun getValueAsPrintableString(previousGenes: List<Gene>, mode: String?, targetFormat: OutputFormat?): String {
         return "\"${getValueAsRawString()}\""
     }
 
