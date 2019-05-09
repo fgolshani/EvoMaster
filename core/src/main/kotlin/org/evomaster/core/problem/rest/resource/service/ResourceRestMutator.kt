@@ -43,12 +43,16 @@ class ResourceRestMutator : StandardMutator<ResourceRestIndividual>() {
     }
 
     override fun update(previous: EvaluatedIndividual<ResourceRestIndividual>, mutated: EvaluatedIndividual<ResourceRestIndividual>, mutatedGenes : MutableList<Gene>) {
+        //update resource dependency after mutating strcuture of the resource-based individual
         if(mutatedGenes.isEmpty() && (previous.individual.getResourceCalls().size > 1 || mutated.individual.getResourceCalls().size > 1) && config.probOfEnablingResourceDependencyHeuristics > 0){
-            //only for structure mutation
             val isWorse = previous.fitness.subsumes(mutated.fitness, archive.notCoveredTargets())
             val isBetter = archive.wouldReachNewTarget(mutated) || !isWorse
             rm.detectDependency(previous, mutated, if(isBetter) 1 else if(isWorse) -1 else 0)
         }
+
+        /*
+         TODO Man update resource dependency after do standard mutation?
+         */
     }
 
 }

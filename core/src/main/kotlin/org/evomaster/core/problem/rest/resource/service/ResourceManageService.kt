@@ -22,6 +22,7 @@ import org.evomaster.core.problem.rest.resource.model.dependency.MutualResources
 import org.evomaster.core.problem.rest.resource.model.dependency.ParamRelatedToTable
 import org.evomaster.core.problem.rest.resource.model.dependency.ResourceRelatedToResources
 import org.evomaster.core.problem.rest.resource.model.dependency.SelfResourcesRelation
+import org.evomaster.core.problem.rest.resource.util.ComparisionUtil
 import org.evomaster.core.problem.rest.resource.util.ParamUtil
 import org.evomaster.core.problem.rest.resource.util.ParserUtil
 import org.evomaster.core.problem.rest.resource.util.RTemplateHandler
@@ -162,7 +163,7 @@ class ResourceManageService {
 
         when(seqCur.size - seqPre.size){
             0 ->{
-                //SWAP, MODIFY, REPLACE
+                //SWAP, MODIFY, REPLACE are on the category
                 if(seqPre.map { it.resourceInstance.getAResourceKey() }.toList() == seqCur.map { it.resourceInstance.getAResourceKey() }.toList()){
                     //MODIFY
                     /*
@@ -170,28 +171,28 @@ class ResourceManageService {
                         if C is worse/better, C rely on B, else C may not rely on B, i.e., the changes of B cannot affect C.
                      */
                     if(isBetter != 0){
-                        val locOfModified = (0 until seqCur.size).find { seqPre[it].resourceInstance.getKey() != seqCur[it].resourceInstance.getKey() }?:
+                        val locOfModified = (0 until seqCur.size).find { seqPre[it].template.template != seqCur[it].template.template }?:
                             return
                         //throw IllegalArgumentException("mutator does not change anything.")
 
                         val modified = seqCur[locOfModified]
+                        val distance = seqCur[locOfModified].actions.size - seqPre[locOfModified].actions.size
 
                         var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
-                            if(index < locOfModified) restResourceCalls.actions.size
+                            if(index <= locOfModified) restResourceCalls.actions.size
                             else 0
                         }.sum()
 
                         ((locOfModified + 1) until seqCur.size).forEach { indexOfCalls ->
                             var isAnyChange = false
-                            seqCur[indexOfCalls].actions.forEach {
+                            seqCur[indexOfCalls].actions.forEach {curAction ->
+                                val actionA = actionIndex - distance
+                                isAnyChange = isAnyChange || ComparisionUtil.compare(actionIndex, current, actionA, previous) !=0
                                 actionIndex += 1
-                                val actionA = actionIndex
-                                isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous) !=0
                             }
 
                             if(isAnyChange){
-                                //seqPre[indexOfCalls] depends on added
-                                val seqKey = seqPre[indexOfCalls].resourceInstance.getAResourceKey()
+                                val seqKey = seqCur[indexOfCalls].resourceInstance.getAResourceKey()
                                 updateDependencies(seqKey, mutableListOf(modified!!.resourceInstance.getAResourceKey()), ResourceRestStructureMutator.MutationType.MODIFY.toString())
                             }
                         }
@@ -223,34 +224,42 @@ class ResourceManageService {
                         val swapB = seqCur[swapsloc[1]]
 
                         val locOfF = swapsloc[0]
-
                         val distance = swapF.actions.size - swapB.actions.size
 
+                        //check F
+                        if(ComparisionUtil.compare(swapsloc[0], current, swapsloc[1], previous) != 0){
+
+                            val middles = seqCur.subList(swapsloc[0]+1, swapsloc[1]+1).map { it.resourceInstance.getAResourceKey() }
+                            middles.forEach {
+                                updateDependencies(swapF.resourceInstance.getAResourceKey(), mutableListOf(it),ResourceRestStructureMutator.MutationType.SWAP.toString(), (1.0/middles.size))
+                            }
+                        }
+
+                        //check FCDE
                         var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
-                            if(index < locOfF) restResourceCalls.actions.size
+                            if(index <= locOfF) restResourceCalls.actions.size
                             else 0
                         }.sum()
-
 
                         ( (locOfF + 1) until swapsloc[1] ).forEach { indexOfCalls ->
                             var isAnyChange = false
                             var changeDegree = 0
-                            seqCur[indexOfCalls].actions.forEach {
-                                actionIndex += 1
-                                val actionA = actionIndex + distance
 
-                                val compareResult = swapF.actions.plus(swapB.actions).find { it.getName() == current.individual.seeActions()[actionA].getName() }.run {
-                                    if(this == null) compare(actionA, current, actionIndex, previous)
-                                    else compare(this.getName(), current, previous)
+                            seqCur[indexOfCalls].actions.forEach {curAction->
+                                val actionA = actionIndex - distance
+
+                                val compareResult = swapF.actions.plus(swapB.actions).find { it.getName() == curAction.getName() }.run {
+                                    if(this == null) ComparisionUtil.compare(actionIndex, current, actionA, previous)
+                                    else ComparisionUtil.compare(this.getName(), current, previous)
                                 }.also { r-> changeDegree += r }
 
                                 isAnyChange = isAnyChange || compareResult!=0
-
+                                actionIndex += 1
                                 //isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous).also { r-> changeDegree += r } !=0
                             }
 
                             if(isAnyChange){
-                                val seqKey = seqPre[indexOfCalls].resourceInstance.getAResourceKey()
+                                val seqKey = seqCur[indexOfCalls].resourceInstance.getAResourceKey()
 
                                 val relyOn = if(changeDegree > 0){
                                     mutableListOf(swapF!!.resourceInstance.getAResourceKey())
@@ -261,16 +270,9 @@ class ResourceManageService {
 
                                 updateDependencies(seqKey, relyOn, ResourceRestStructureMutator.MutationType.SWAP.toString())
                             }
-
-                            //check F
-                            if(compare(swapsloc[0], current, swapsloc[1], previous) != 0){
-
-                                val middles = seqCur.subList(swapsloc[0]+1, swapsloc[1]+1).map { it.resourceInstance.getAResourceKey() }
-                                middles.forEach {
-                                    updateDependencies(swapF.resourceInstance.getAResourceKey(), mutableListOf(it),ResourceRestStructureMutator.MutationType.SWAP.toString(), (1.0/middles.size))
-                                }
-                            }
                         }
+
+                        //TODO check BG
 
                     }
 
@@ -291,28 +293,29 @@ class ResourceManageService {
                         val distance = locOfReplaced - seqPre.indexOf(replace)
 
                         var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
-                            if(index < locOfReplaced) restResourceCalls.actions.size
+                            if(index <= locOfReplaced) restResourceCalls.actions.size
                             else 0
                         }.sum()
 
                         ( (locOfReplaced + 1) until seqCur.size ).forEach { indexOfCalls ->
                             var isAnyChange = false
                             var changeDegree = 0
-                            seqCur[indexOfCalls].actions.forEach {
-                                actionIndex += 1
-                                val actionA = actionIndex + distance
+                            seqCur[indexOfCalls].actions.forEach {curAction->
+                                val actionA = actionIndex - distance
 
-                                val compareResult = replaced.actions.plus(replace.actions).find { it.getName() == current.individual.seeActions()[actionA].getName() }.run {
-                                    if(this == null) compare(actionA, current, actionIndex, previous)
-                                    else compare(this.getName(), current, previous)
+                                val compareResult = replaced.actions.plus(replace.actions).find { it.getName() == curAction.getName() }.run {
+                                    if(this == null) ComparisionUtil.compare(actionIndex, current, actionA, previous)
+                                    else ComparisionUtil.compare(this.getName(), current, previous)
                                 }.also { r-> changeDegree += r }
 
                                 isAnyChange = isAnyChange || compareResult!=0
+                                actionIndex += 1
+
                                 //isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous).also { r-> changeDegree += r } !=0
                             }
 
                             if(isAnyChange){
-                                val seqKey = seqPre[indexOfCalls].resourceInstance.getAResourceKey()
+                                val seqKey = seqCur[indexOfCalls].resourceInstance.getAResourceKey()
 
                                 val relyOn = if(changeDegree > 0){
                                     mutableListOf(replaced.resourceInstance.getAResourceKey())
@@ -340,34 +343,32 @@ class ResourceManageService {
 
                     val locOfAdded = seqCur.indexOf(added!!)
                     var actionIndex = seqCur.mapIndexed { index, restResourceCalls ->
-                        if(index < locOfAdded) restResourceCalls.actions.size
+                        if(index <= locOfAdded) restResourceCalls.actions.size
                         else 0
                     }.sum()
 
                     val distance = added!!.actions.size
 
-                    (locOfAdded until seqPre.size).forEach { indexOfCalls ->
+                    (locOfAdded+1 until seqCur.size).forEach { indexOfCalls ->
                         var isAnyChange = false
 
-                        seqPre[indexOfCalls].actions.forEach {
-                            val actionA = actionIndex + distance
-
-                            val compareResult = added.actions.find { it.getName() == current.individual.seeActions().get(actionA).getName() }.run {
-                                if(this == null) compare(actionA, current, actionIndex, previous)
-                                else compare(this.getName(), current, previous)
+                        seqCur[indexOfCalls].actions.forEach { curAction->
+                            var actionA = actionIndex - distance
+                            val compareResult = added.actions.find { it.getName() == curAction.getName() }.run {
+                                if(this == null) ComparisionUtil.compare(actionIndex, current, actionA, previous)
+                                else ComparisionUtil.compare(this.getName(), current, previous)
                             }
 
                             isAnyChange = isAnyChange || compareResult!=0
                             actionIndex += 1 //actionB
-                            //isAnyChange = isAnyChange || compare(actionA, current, actionIndex, previous)!=0
                         }
 
                         if(isAnyChange){
-                            //seqPre[indexOfCalls] depends on added
-                            val seqKey = seqPre[indexOfCalls].resourceInstance.getAResourceKey()
+                            val seqKey = seqCur[indexOfCalls].resourceInstance.getAResourceKey()
                             updateDependencies(seqKey, mutableListOf(addedKey), ResourceRestStructureMutator.MutationType.ADD.toString())
                         }
                     }
+
                 }
             }
             -1 ->{
@@ -391,32 +392,32 @@ class ResourceManageService {
                         else 0
                     }.sum()
 
-                    val distance = delete!!.actions.size
+                    val distance = 0 - delete!!.actions.size
 
-                    ((locOfDelete + 1) until seqPre.size).forEach { indexOfCalls ->
+                    (locOfDelete until seqCur.size).forEach { indexOfCalls ->
                         var isAnyChange = false
 
-                        seqPre[indexOfCalls].actions.forEach {
-                            actionIndex += 1 //actionB
+                        seqCur[indexOfCalls].actions.forEach { curAction ->
                             val actionA = actionIndex - distance
-                            val compareResult = delete.actions.find { it.getName() == current.individual.seeActions()[actionA].getName() }.run {
-                                if(this == null) compare(actionA, current, actionIndex, previous)
-                                else compare(this.getName(), current, previous)
+
+                            val compareResult = delete.actions.find { it.getName() == curAction.getName() }.run {
+                                if(this == null) ComparisionUtil.compare(actionIndex, current, actionA, previous)
+                                else ComparisionUtil.compare(this.getName(), current, previous)
                             }
 
                             isAnyChange = isAnyChange || compareResult!=0
+                            actionIndex += 1 //actionB
                         }
 
                         if(isAnyChange){
-                            //seqPre[indexOfCalls] depends on added
-                            val seqKey = seqPre[indexOfCalls].resourceInstance.getAResourceKey()
+                            val seqKey = seqCur[indexOfCalls].resourceInstance.getAResourceKey()
                             updateDependencies(seqKey, mutableListOf(deleteKey), ResourceRestStructureMutator.MutationType.DELETE.toString())
                         }
                     }
                 }
             }
             else ->{
-                TODO("not support yet")
+                throw IllegalArgumentException("apply undefined structure mutator that changed the size of resources from ${seqPre.size} to ${seqCur.size}")
             }
         }
 
@@ -447,59 +448,6 @@ class ResourceManageService {
             else if(!found.additionalInfo.contains(additionalInfo))
                 found.additionalInfo += ";$additionalInfo"
         }
-    }
-
-
-    private fun compare(actionName : String, eviA : EvaluatedIndividual<ResourceRestIndividual>, eviB : EvaluatedIndividual<ResourceRestIndividual>) : Int{
-        val actionAs = mutableListOf<Int>()
-        val actionBs = mutableListOf<Int>()
-        eviA.individual.seeActions().forEachIndexed { index, action ->
-            if(action.getName() == actionName)
-                actionAs.add(index)
-        }
-
-        eviB.individual.seeActions().forEachIndexed { index, action ->
-            if(action.getName() == actionName)
-                actionBs.add(index)
-        }
-
-        return compare(actionAs, eviA, actionBs, eviB)
-    }
-
-    /**
-     *  is the performance of [actionA] better than the performance [actionB]?
-     */
-    private fun compare(actionA : Int, eviA : EvaluatedIndividual<ResourceRestIndividual>, actionB: Int, eviB : EvaluatedIndividual<ResourceRestIndividual>) : Int{
-        return compare(mutableListOf(actionA), eviA, mutableListOf(actionB), eviB)
-    }
-
-    private fun compare(actionA : MutableList<Int>, eviA : EvaluatedIndividual<ResourceRestIndividual>, actionB: MutableList<Int>, eviB : EvaluatedIndividual<ResourceRestIndividual>) : Int{
-        val alistHeuristics = eviA.fitness.getViewOfData().filter { actionA.contains(it.value.actionIndex) }
-        val blistHeuristics = eviB.fitness.getViewOfData().filter { actionB.contains(it.value.actionIndex) }
-
-        //whether actionA reach more
-        if(alistHeuristics.size > blistHeuristics.size) return 1
-        else if(alistHeuristics.size < blistHeuristics.size) return -1
-
-        //whether actionA reach new
-        if(alistHeuristics.filter { !blistHeuristics.containsKey(it.key) }.isNotEmpty()) return 1
-        else if(blistHeuristics.filter { !alistHeuristics.containsKey(it.key) }.isNotEmpty()) return -1
-
-        val targets = alistHeuristics.keys.plus(blistHeuristics.keys).toHashSet()
-
-        targets.forEach { t->
-            val ta = alistHeuristics[t]
-            val tb = blistHeuristics[t]
-
-            if(ta != null && tb != null){
-                if(ta.distance > tb.distance)
-                    return 1
-                else if(ta.distance < tb.distance)
-                    return -1
-            }
-        }
-
-        return 0
     }
 
     /**
@@ -718,20 +666,30 @@ class ResourceManageService {
         val targets = front.flatMap { it.actions.filter {a -> a is RestCallAction }}
 
         /*
-         TODO remove duplicated post actions
+        TODO
+
          e.g., A/{a}, A/{a}/B/{b}, A/{a}/C/{c}
          if there are A/{a} and A/{a}/B/{b} that exists in the test,
          1) when appending A/{a}/C/{c}, A/{a} should not be created again;
          2) But when appending A/{a} in the test, A/{a} with new values should be created.
         */
-        if(call.actions.size > 1){
-            call.actions.removeIf {action->
-                action is RestCallAction &&
-                        (action.verb == HttpVerb.POST || action.verb == HttpVerb.PUT) &&
-                        action != call.actions.last() &&
-                        targets.find {it.getName() == action.getName()}!=null
-            }
-        }
+//        if(call.actions.size > 1){
+//            call.actions.removeIf {action->
+//                action is RestCallAction &&
+//                        //(action.verb == HttpVerb.POST || action.verb == HttpVerb.PUT) &&
+//                        action.verb == HttpVerb.POST &&
+//                        action != call.actions.last() &&
+//                        targets.find {it is RestCallAction && it.getName() == action.getName()}.also {
+//                            it?.let {ra->
+//                                front.find { call-> call.actions.contains(ra) }?.let { call -> call.isStructureMutable = false }
+//                                if(action.saveLocation) (ra as RestCallAction).saveLocation = true
+//                                action.locationId?.let {
+//                                    (ra as RestCallAction).saveLocation = action.saveLocation
+//                                }
+//                            }
+//                        }!=null
+//            }
+//        }
 
         /*
          bind values based front actions,
@@ -900,20 +858,25 @@ class ResourceManageService {
         }
 
         if(dbActions.isNotEmpty()){
+            DbActionUtils.randomizeDbActionGenes(dbActions, randomness)
+            repairDbActions(dbActions)
+
             val removedDbAction = mutableListOf<DbAction>()
 
             dbActions.map { it.table.name }.groupingBy { it }.eachCount().filter { it.value > 1 }.keys.forEach {tableName->
-                removedDbAction.addAll(call.dbActions.filter { it.table.name == tableName }.run { this.subList(1, this.size) })
+                removedDbAction.addAll(dbActions.filter { it.table.name == tableName }.run { this.subList(1, this.size) })
             }
-
 
             if(removedDbAction.isNotEmpty()){
                 dbActions.removeAll(removedDbAction)
-                repairDbActions(dbActions)
-            }
 
-            DbActionUtils.randomizeDbActionGenes(dbActions, randomness)
-            //repairDbActions(dbActions.filter { !it.representExistingData }.toMutableList())
+                val previous = mutableListOf<DbAction>()
+                dbActions.forEachIndexed { index, dbAction ->
+                    if(index != 0 && dbAction.table.foreignKeys.isNotEmpty() && dbAction.table.foreignKeys.find { fk -> removedDbAction.find { it.table.name == fk.targetTable } !=null } != null)
+                        DbActionUtils.repairFK(dbAction, previous)
+                    previous.add(dbAction)
+                }
+            }
 
             bindCallWithDBAction(call, dbActions)
 
@@ -925,7 +888,7 @@ class ResourceManageService {
 
     /**
      *  repair dbaction of resource call after standard mutation
-     *  Since standard mutation does not change strcuture of a test, the involved tables
+     *  Since standard mutation does not change structure of a test, the involved tables
      *  should be same with previous.
      */
     fun repairRestResourceCalls(call: ResourceRestCalls) {
@@ -1027,14 +990,19 @@ class ResourceManageService {
             call.dbActions.clear()
         }else{
             call.dbActions.removeIf { dbRelatedToTables.contains(it.table.name) }
+            /*
+             TODO Man there may need to add selection in order to ensure the reference pk exists
+             */
             //val selections = mutableListOf<DbAction>()
-            repairDbActions(dbActions.plus(call.dbActions).toMutableList())
             val previous = mutableListOf<DbAction>()
-            call.dbActions.forEach {
-                val refers = DbActionUtils.repairFK(it, dbActions.plus(previous).toMutableList())
-                //selections.addAll( (sampler as ResourceRestSampler).sqlInsertBuilder!!.generateSelect(refers) )
-                previous.add(it)
+            call.dbActions.forEach {dbaction->
+                if(dbaction.table.foreignKeys.find { dbRelatedToTables.contains(it.targetTable) }!=null){
+                    val refers = DbActionUtils.repairFK(dbaction, dbActions.plus(previous).toMutableList())
+                    //selections.addAll( (sampler as ResourceRestSampler).sqlInsertBuilder!!.generateSelect(refers) )
+                }
+                previous.add(dbaction)
             }
+            repairDbActions(dbActions.plus(call.dbActions).toMutableList())
             //call.dbActions.addAll(0, selections)
         }
 

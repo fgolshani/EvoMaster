@@ -1,6 +1,7 @@
 package org.evomaster.core.problem.rest.resource.model
 
 import org.evomaster.core.database.DbAction
+import org.evomaster.core.database.DbActionUtils
 import org.evomaster.core.problem.rest.HttpVerb
 import org.evomaster.core.problem.rest.RestAction
 import org.evomaster.core.problem.rest.RestCallAction
@@ -25,6 +26,8 @@ class ResourceRestCalls(
     val dbActions = mutableListOf<DbAction>()
 
     var status = ResourceStatus.NOT_FOUND
+
+    var isStructureMutable = true
 
     fun copy() : ResourceRestCalls{
         val copy = ResourceRestCalls(template, resourceInstance.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())

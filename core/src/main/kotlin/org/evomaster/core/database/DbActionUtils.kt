@@ -299,7 +299,7 @@ object DbActionUtils {
             return repaired
 
         val pks = previous.flatMap { it.seeGenes() }.filter { it is SqlPrimaryKeyGene }
-        dbAction.seeGenes().filter { it is SqlForeignKeyGene }.forEach { fk->
+        dbAction.seeGenes().flatMap { it.flatView() }.filter { it is SqlForeignKeyGene }.forEach { fk->
             pks.find { pk -> (pk as SqlPrimaryKeyGene).tableName == (fk as SqlForeignKeyGene).targetTable && pk.uniqueId != fk.uniqueIdOfPrimaryKey }?.let {
                 (fk as SqlForeignKeyGene).uniqueIdOfPrimaryKey = (it as SqlPrimaryKeyGene).uniqueId
                 repaired.add(it as SqlPrimaryKeyGene)

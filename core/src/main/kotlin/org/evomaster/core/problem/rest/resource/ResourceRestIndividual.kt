@@ -132,8 +132,11 @@ class ResourceRestIndividual (
 
         getResourceCalls().forEach {
             if (it.dbActions.isNotEmpty()){
-                if(!DbActionUtils.verifyActions(it.dbActions) || !DbActionUtils.verifyActions(previousDbActions.plus(it.dbActions))){
+                var result = try{
+                    DbActionUtils.verifyActions(it.dbActions) || DbActionUtils.verifyActions(previousDbActions.plus(it.dbActions))
+                }catch (e : IllegalArgumentException ){ false}
 
+                if(!result){
                     it.dbActions.forEach { db->
                         DbActionUtils.repairFK(db, previousDbActions)
                         previousDbActions.add(db)
