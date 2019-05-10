@@ -27,8 +27,6 @@ class ResourceRestCalls(
 
     var status = ResourceStatus.NOT_FOUND
 
-    var isStructureMutable = true
-
     fun copy() : ResourceRestCalls{
         val copy = ResourceRestCalls(template, resourceInstance.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())
         if(dbActions.isNotEmpty()){

@@ -28,7 +28,7 @@ class LocalMain {
                     //resource-based sampling
                     "--probOfSmartSampling", probOfSmartSampling.toString(),
                     "--resourceSampleStrategy",resourceSampleStrategy,
-                    "--probOfEnablingResourceDependencyHeuristics", 0.5.toString(),
+                    "--probOfEnablingResourceDependencyHeuristics", 0.0.toString(),
 
 
 //                    //archive-based mutation

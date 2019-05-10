@@ -64,7 +64,16 @@ class ResourceRestStructureMutator : StructureMutator() {
      * delete one resource call
      */
     private fun handleDelete(ind: ResourceRestIndividual){
-        val pos = randomness.nextInt(0, ind.getResourceCalls().size - 1)
+
+        val fromDependency = rm.isDependencyNotEmpty()
+                && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
+
+        val removed = if(fromDependency){
+                rm.handleDelNonDepResource(ind)
+            }else null
+        val pos = if(removed != null) ind.getResourceCalls().indexOf(removed)
+            else  randomness.nextInt(0, ind.getResourceCalls().size - 1)
+
         ind.removeResourceCall(pos)
     }
 
@@ -72,6 +81,15 @@ class ResourceRestStructureMutator : StructureMutator() {
      * swap two resource calls
      */
     private fun handleSwap(ind: ResourceRestIndividual){
+        val fromDependency = rm.isDependencyNotEmpty()
+                && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
+        if(fromDependency){
+            val pair = rm.handleSwapDepResource(ind)
+            if(pair!=null){
+                ind.swapResourceCall(pair.first, pair.second)
+                return
+            }
+        }
         val candidates = randomness.choose(Array(ind.getResourceCalls().size){i -> i}.toList(), 2)
         ind.swapResourceCall(candidates[0], candidates[1])
     }
@@ -92,27 +110,33 @@ class ResourceRestStructureMutator : StructureMutator() {
         val fromDependency = rm.isDependencyNotEmpty()
                 && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
 
-        var call = if(fromDependency){
+        val pair = if(fromDependency){
                         rm.handleAddDepResource(ind, max)
                     }else null
 
-        if(call == null){
-            call =  rm.handleAddResource(ind, max)
+        if(pair == null){
+            val randomCall =  rm.handleAddResource(ind, max)
             val pos = randomness.nextInt(0, ind.getResourceCalls().size)
 
-            maintainAuth(ind, call)
-            ind.addResourceCall(pos, call)
+            maintainAuth(ind, randomCall)
+            ind.addResourceCall(pos, randomCall)
         }else{
-            rm.bindCallWithFront(call, ind.getResourceCalls().toMutableList())
+            var addPos : Int? = null
+            if(pair.first != null){
+                val pos = ind.getResourceCalls().indexOf(pair.first!!)
+                rm.bindCallWithFront(pair.first!!, mutableListOf(pair.second))
+                addPos = randomness.nextInt(0, pos)
+            }
+            if (addPos == null) addPos = randomness.nextInt(0, ind.getResourceCalls().size)
 
             //if call is to create new resource, and the related resource is not related to any resource, it might need to put the call in the front of ind,
             //else add last position if it has dependency with existing resources
-            val pos = if(ind.getResourceCalls().filter { !it.template.independent }.isNotEmpty())
-                ind.getResourceCalls().size
-            else
-                0
-            maintainAuth(ind, call)
-            ind.addResourceCall( pos, call)
+//            val pos = if(ind.getResourceCalls().filter { !it.template.independent }.isNotEmpty())
+//                ind.getResourceCalls().size
+//            else
+//                0
+            maintainAuth(ind, pair.second)
+            ind.addResourceCall( addPos, pair.second)
         }
 
         assert(sizeOfCalls == ind.getResourceCalls().size - 1)
@@ -123,13 +147,41 @@ class ResourceRestStructureMutator : StructureMutator() {
      */
     private fun handleReplace(ind: ResourceRestIndividual){
         var max = config.maxTestSize
-
         ind.getResourceCalls().forEach { max -= it.actions.size }
-        val call = rm.handleAddResource(ind, max)
 
-        val pos = randomness.nextInt(0, ind.getResourceCalls().size - 1)
-        maintainAuth(ind, call)
-        ind.replaceResourceCall(pos, call)
+        val fromDependency = rm.isDependencyNotEmpty()
+                && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
+
+        var pos = if(fromDependency){
+            rm.handleDelNonDepResource(ind)?.run {
+                ind.getResourceCalls().indexOf(this)
+            }
+        }else{
+            null
+        }
+        if(pos == null) pos = randomness.nextInt(0, ind.getResourceCalls().size - 1)
+
+        max += ind.getResourceCalls()[pos].actions.size
+
+        ind.removeResourceCall(pos)
+
+        var pair = if(fromDependency && pos != ind.getResourceCalls().size -1){
+                        rm.handleAddDepResource(ind, max, ind.getResourceCalls().subList(pos, ind.getResourceCalls().size).toMutableList())
+                    }else null
+
+
+        var call = pair?.second
+        if(pair == null){
+            call =  rm.handleAddResource(ind, max)
+        }else{
+            //rm.bindCallWithFront(call, ind.getResourceCalls().toMutableList())
+            if(pair.first != null){
+                rm.bindCallWithFront(pair.first!!, mutableListOf(pair.second))
+            }
+        }
+
+        maintainAuth(ind, call!!)
+        ind.addResourceCall(pos, call!!)
     }
 
     /**
