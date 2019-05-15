@@ -1,5 +1,6 @@
 package org.evomaster.core.problem.rest.resource.service
 
+import ch.qos.logback.core.db.dialect.DBUtil
 import com.google.inject.Inject
 import org.apache.commons.lang3.mutable.Mutable
 import org.evomaster.client.java.controller.api.dto.TestResultsDto
@@ -13,6 +14,7 @@ import org.evomaster.core.problem.rest.RestCallAction
 import org.evomaster.core.problem.rest.SampleType
 import org.evomaster.core.problem.rest.auth.AuthenticationInfo
 import org.evomaster.core.problem.rest.param.BodyParam
+import org.evomaster.core.problem.rest.param.Param
 import org.evomaster.core.problem.rest.param.PathParam
 import org.evomaster.core.problem.rest.param.QueryParam
 import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
@@ -22,10 +24,7 @@ import org.evomaster.core.problem.rest.resource.model.dependency.MutualResources
 import org.evomaster.core.problem.rest.resource.model.dependency.ParamRelatedToTable
 import org.evomaster.core.problem.rest.resource.model.dependency.ResourceRelatedToResources
 import org.evomaster.core.problem.rest.resource.model.dependency.SelfResourcesRelation
-import org.evomaster.core.problem.rest.resource.util.ComparisionUtil
-import org.evomaster.core.problem.rest.resource.util.ParamUtil
-import org.evomaster.core.problem.rest.resource.util.ParserUtil
-import org.evomaster.core.problem.rest.resource.util.RTemplateHandler
+import org.evomaster.core.problem.rest.resource.util.*
 import org.evomaster.core.search.Action
 import org.evomaster.core.search.EvaluatedIndividual
 import org.evomaster.core.search.gene.*
@@ -33,6 +32,7 @@ import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.service.Sampler
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import javax.swing.text.html.parser.Parser
 import kotlin.math.max
 
 /**
@@ -86,12 +86,15 @@ class ResourceManageService {
     private var flagInitDep = false
 
     fun initAbstractResources(actionCluster : MutableMap<String, Action>) {
+        if(hasDBHandler())
+            snapshotDB()
+
         actionCluster.values.forEach { u ->
             if (u is RestCallAction) {
                 val resource = resourceCluster.getOrPut(u.path.toString()) {
                     RestResource(u.path.copy(), mutableListOf()).also {
                         if (config.doesApplyTokenParser)
-                            it.initTokens()
+                            it.initTokens(dataInDB.keys)
                     }
                 }
                 resource.actions.add(u)
@@ -102,7 +105,6 @@ class ResourceManageService {
         resourceCluster.values.forEach{it.init()}
 
         if(hasDBHandler()){
-            snapshotDB()
             /*
                 derive possible db creation for each abstract resources.
                 The derived db creation needs to be further confirmed based on feedback from evomaster driver (NOT IMPLEMENTED YET)
@@ -128,16 +130,15 @@ class ResourceManageService {
      * Note that it can only be executed one time
      */
     fun initDependency(){
-        if(config.probOfEnablingResourceDependencyHeuristics == 0.0 || flagInitDep) return
-
+        if(flagInitDep) return
         flagInitDep = true
 
-        //1. based on resourceTables to identify mutual relations among resources
-        initDependencyBasedOnResourceTables()
+//        initDependencyBasedOnResourceTables()
+        initDependencyBasedOnTokens()
 
-        //2. for each resource, identify relations based on derived table
-        if(config.doesApplyTokenParser)
-            initDependencyBasedOnParamRelatedTables()
+//        initDependencyBasedOnParamRelatedTables()
+        initDependencyBasedOnSchema()
+
 
     }
 
@@ -150,11 +151,69 @@ class ResourceManageService {
 
                 mutualResources.forEach { res ->
                     val relations = dependencies.getOrPut(res){ mutableListOf()}
-                    if(relations.find { r-> r.targets.contains(mutualRelation.targets) && r.additionalInfo == mutualRelation.additionalInfo } == null )
-                        relations.add(mutualRelation)
+
+                    relations.find { r-> r is MutualResourcesRelations && r.targets.contains(mutualRelation.targets)}.let {
+                        if(it == null)
+                            relations.add(mutualRelation)
+                        else
+                            (it as MutualResourcesRelations).referredTables.add(tab)
+
+                    }
                 }
             }
         }
+    }
+
+    private fun initDependencyBasedOnTokens(){
+        dataInDB.keys.forEach { table->
+            val mutualResources = resourceCluster.filter { r -> r.value.getDerivedRelatedTables().any { e -> DbUtil.formatTableName(e) == DbUtil.formatTableName(table)}}.keys.toList()
+            if(mutualResources.isNotEmpty() && mutualResources.size > 1){
+                val mutualRelation = MutualResourcesRelations(mutualResources, ParserUtil.SimilarityThreshold, mutableSetOf(DbUtil.formatTableName(table)))
+
+                mutualResources.forEach { res ->
+                    val relations = dependencies.getOrPut(res){ mutableListOf()}
+                    relations.find { r-> r is MutualResourcesRelations && r.targets.contains(mutualRelation.targets)}.let {
+                        if(it == null)
+                            relations.add(mutualRelation)
+                        else
+                            (it as MutualResourcesRelations).referredTables.add(DbUtil.formatTableName(table))
+                    }
+                }
+            }
+        }
+    }
+
+
+
+    private fun initDependencyBasedOnSchema(){
+        resourceCluster.values
+                .filter { it.actions.filter { it is RestCallAction && it.verb == HttpVerb.POST }.isNotEmpty() }
+                .forEach { r->
+                    /*
+                     TODO Man should only apply on POST Action? how about others?
+                     */
+                    val post = r.actions.first { it is RestCallAction && it.verb == HttpVerb.POST }!! as RestCallAction
+                    post.tokens.forEach { _, u ->
+                        resourceCluster.values.forEach { or ->
+                            if(or != r){
+                                or.actions
+                                        .filter { it is RestCallAction }
+                                        .flatMap { (it as RestCallAction).tokens.values.filter { t -> t.fromDefinition && t.isDirect && t.isType } }
+                                        .filter{ot ->
+                                            ParserUtil.stringSimilarityScore(u.getKey(), ot.getKey()) >= ParserUtil.SimilarityThreshold
+                                        }.let {
+                                            if(it.isNotEmpty()){
+                                                val addInfo = it.map { t-> t.getKey()}.joinToString(";")
+                                                updateDependencies(or.getName(), mutableListOf(r.getName()), addInfo, ParserUtil.SimilarityThreshold)
+                                                updateDependencies(r.getName(), mutableListOf(or.getName()), addInfo, ParserUtil.SimilarityThreshold)
+                                            }
+
+                                        }
+
+                            }
+                        }
+                    }
+                }
     }
 
 
@@ -526,12 +585,52 @@ class ResourceManageService {
             /*
                 TODO Man a strategy to manipulate the probability
              */
-            found.probability = relation.probability
+            found.probability = max(found.probability,relation.probability)
             if(found.additionalInfo.isBlank())
                 found.additionalInfo = additionalInfo
             else if(!found.additionalInfo.contains(additionalInfo))
                 found.additionalInfo += ";$additionalInfo"
         }
+    }
+
+    private fun deriveTextWithTable(text : String, tables : Set<String> , map : MutableMap<String, MutableList<MatchedInfo>>, inputlevel: Int){
+        if(hasDBHandler()){
+            tables.forEach { tableName ->
+                deriveTextWithTable(text, tableName, map, inputlevel)
+            }
+        }
+    }
+
+    private fun deriveTextWithTable(text : String, tableName: String, map : MutableMap<String, MutableList<MatchedInfo>>, inputlevel : Int): Boolean{
+        val score = ParserUtil.stringSimilarityScore(text.toLowerCase(), DbUtil.formatTableName(tableName))
+        if(score >= ParserUtil.SimilarityThreshold){
+            map.getOrPut(DbUtil.formatTableName(tableName)){ mutableListOf()}.let {
+                if(it.none {e->e.matched.toLowerCase() == DbUtil.formatTableName(tableName) }){
+                    it.add(MatchedInfo(DbUtil.formatTableName(tableName), score, inputIndicator = inputlevel, outputIndicator = 0))
+                }
+            }
+            if(score == 1.0)  return true
+        }
+
+        val fields = (sampler as ResourceRestSampler).sqlInsertBuilder?.getTableInfo(tableName)?.columns
+        fields?.let {
+            it.forEach {c->
+                var scoref = ParserUtil.stringSimilarityScore(text, c.name)
+                if(scoref < ParserUtil.SimilarityThreshold)
+                    scoref = ParserUtil.stringSimilarityScore(text, tableName+c.name)
+
+                if(scoref >= ParserUtil.SimilarityThreshold){
+                    val matched = map.getOrPut(DbUtil.formatTableName(tableName)){ mutableListOf()}
+                    if(matched.none {e->e.matched.toLowerCase() == c.name.toLowerCase() }){
+                        matched.add(MatchedInfo(c.name.toLowerCase(), scoref, inputIndicator = inputlevel, outputIndicator = 1))
+                    }
+                }
+                if (scoref == 1.0) return true
+
+            }
+        }
+
+        return false
     }
 
     /**
@@ -661,7 +760,7 @@ class ResourceManageService {
 
     fun handleDelNonDepResource(ind: ResourceRestIndividual) : ResourceRestCalls?{
         val candidates = ind.getResourceCalls().filter {cur->
-            !existsDependentResources(ind, cur)
+            !existsDependentResources(ind, cur) && cur.isDeletable
         }
         if (candidates.isEmpty()) return null
 
@@ -912,6 +1011,18 @@ class ResourceManageService {
             if(isNotEmpty())
                 bindCallWithOtherDBAction(call, this.toMutableList())
         }
+
+        val frontTables = front.map { Pair(it, it.dbActions.map { it.table.name })}.toMap()
+        call.dbActions.forEach { db->
+           db.table.foreignKeys.map { it.targetTable }.let {ftables->
+               frontTables.filter { entry ->
+                   entry.value.intersect(ftables).isNotEmpty()
+                }.forEach { t, u ->
+                   t.isDeletable = false
+                   t.shouldBefore.add(call.resourceInstance.getAResourceKey())
+               }
+           }
+        }
     }
 
     private fun existRelatedTable(call: ResourceRestCalls) : Boolean{
@@ -945,6 +1056,7 @@ class ResourceManageService {
                     val update = resourceCluster[resourceId]!!.updateActionRelatedToTable(verb, dbDto, dataInDB.keys)
                     val curRelated = resourceCluster[resourceId]!!.getConfirmedRelatedTables()
                     if(update || curRelated.isNotEmpty()){
+                        updateParamTable(resourceCluster[resourceId]!!, action)
                         resourceTables.getOrPut(resourceId){ mutableSetOf()}.apply {
                             if(isEmpty() || !containsAll(curRelated)){
                                 val newRelated = curRelated.filter { nr -> !this.contains(nr) }
@@ -961,6 +1073,36 @@ class ResourceManageService {
             updateDependencyOnceResourceTableUpdate(updateMap)
         }
 
+    }
+
+    private fun updateParamTable(ar: RestResource, action: RestCallAction){
+        val ps = ar.paramsToTables.filter { action.parameters.any { p -> ParamRelatedToTable.getNotateKey(p.name) == it.key}}
+        val involvedTables = ps.values.flatMap { it.derivedMap.keys }.toHashSet()
+        val current = ar.actionToTables.values.flatMap { it.flatMap {  t-> t.tableWithFields.keys } }.toHashSet()
+        val removal = involvedTables.filter { !current.contains(it) }
+        val new = current.filter { !involvedTables.contains(it) }
+
+        ps.values.forEach {p->
+            p.derivedMap.forEach { t, u ->
+                if(removal.contains(t)){
+                    //decrease the similarity
+                    u.forEach { it.modifySimilarity(0.9) }
+                }
+                if(current.contains(t)){
+                    p.probability = 1.0
+                    u.forEach { it.setMax() }
+                    p.confirmedSet.add(t)
+                }
+                new.forEach { ntable->
+                    val map = mutableMapOf<String, MutableList<MatchedInfo>>()
+                    deriveTextWithTable(p.originalKey(), ntable, map, inputlevel = 0)
+                    if (map.isNotEmpty()){
+                        p.derivedMap.putAll(map)
+                        p.confirmedSet.add(ntable)
+                    }
+                }
+            }
+        }
     }
 
     private fun updateDependencyOnceResourceTableUpdate(updateMap: MutableMap<String, MutableSet<String>>){
@@ -1012,9 +1154,26 @@ class ResourceManageService {
     /**
      * @return a set of name of tables
      */
-    private fun getDerivedRelatedTablesByAction(action: RestCallAction) : Set<String>?{
+    private fun getAllDerivedRelatedTablesByAction(action: RestCallAction) : Set<String>?{
         return resourceCluster[action.path.toString()]?.paramsToTables?.values?.flatMap { it.targets as MutableList<String> }?.toSet()
     }
+
+    /**
+     * @return a set of name of tables
+     */
+    private fun getDerivedRelatedTablesByAction(action: RestCallAction) : Set<String>?{
+        val all = getAllDerivedRelatedTablesByAction(action)
+        val derivedByPath = resourceCluster[action.path.toString()]?.tokenToTable?.flatMap { it.value }?.toSet()
+        if(derivedByPath == null || derivedByPath.isEmpty()) return all
+        if(all == null  || all.isEmpty()) return derivedByPath
+
+        derivedByPath.intersect(all).let {
+            if(it.isNotEmpty()) return it
+            else
+                return derivedByPath
+        }
+    }
+
     /**
      * generate dbaction for call
      */
@@ -1026,11 +1185,14 @@ class ResourceManageService {
             relatedTables.addAll(call.actions.filter { it is RestCallAction }.flatMap { getDerivedRelatedTablesByAction(it as RestCallAction)?: mutableSetOf() })
         }
 
+        /**
+         * FIXME how to select related tables for preparing db resources for call
+         */
         val dbActions = mutableListOf<DbAction>()
 
         var failToLinkWithResource = false
 
-        relatedTables.forEach { tableName->
+        relatedTables.reversed().forEach { tableName->
             if(forceInsert){
                 generateInserSql(tableName, dbActions)
             }else if(forceSelect){
@@ -1059,6 +1221,17 @@ class ResourceManageService {
         }
 
         if(dbActions.isNotEmpty()){
+            (0 until (dbActions.size - 1)).forEach { i ->
+                (i+1 until dbActions.size).forEach { j ->
+                    dbActions[i].table.foreignKeys.any { f->f.targetTable == dbActions[j].table.name}.let {
+                        if(it){
+                            val idb = dbActions[i]
+                            dbActions[i] = dbActions[j]
+                            dbActions[j] = idb
+                        }
+                    }
+                }
+            }
             DbActionUtils.randomizeDbActionGenes(dbActions, randomness)
             repairDbActions(dbActions)
 
@@ -1134,24 +1307,25 @@ class ResourceManageService {
 
         if(insertDbAction.isEmpty()) return false
 
-        val pasted = mutableListOf<DbAction>()
-        insertDbAction.reversed().forEach {ndb->
-            val index = dbActions.indexOfFirst { it.table.name == ndb.table.name && !it.representExistingData}
-            if(index == -1) pasted.add(0, ndb)
-            else{
-                if(pasted.isNotEmpty()){
-                    dbActions.addAll(index+1, pasted)
-                    pasted.clear()
-                }
-            }
-        }
-
-        if(pasted.isNotEmpty()){
-            if(pasted.size == insertDbAction.size)
-                dbActions.addAll(pasted)
-            else
-                dbActions.addAll(0, pasted)
-        }
+//        val pasted = mutableListOf<DbAction>()
+//        insertDbAction.reversed().forEach {ndb->
+//            val index = dbActions.indexOfFirst { it.table.name == ndb.table.name && !it.representExistingData}
+//            if(index == -1) pasted.add(0, ndb)
+//            else{
+//                if(pasted.isNotEmpty()){
+//                    dbActions.addAll(index+1, pasted)
+//                    pasted.clear()
+//                }
+//            }
+//        }
+//
+//        if(pasted.isNotEmpty()){
+//            if(pasted.size == insertDbAction.size)
+//                dbActions.addAll(pasted)
+//            else
+//                dbActions.addAll(0, pasted)
+//        }
+        dbActions.addAll(insertDbAction)
         return true
     }
 
@@ -1159,26 +1333,21 @@ class ResourceManageService {
         call.actions
                 .filter { (it is RestCallAction) && (!excludePost || it.verb != HttpVerb.POST) }
                 .forEach {
-                    /*
-                    FIXME also involve additionInfo for derived tables
-                     */
                     val map = getParamTableByAction(it as RestCallAction)
-                    map.forEach { paramName, paramToTable ->
-                        /*
-                         TODO choose closest one or first?
+                    map.forEach { p_name, paramToTable ->
+                        val candidates = paramToTable.getBestDerived()
+                        if(candidates.isNotEmpty()){
+                            val tableName = randomness.choose(candidates.keys)
+                            val matchedInfo = randomness.choose(candidates.getValue(tableName))
+                            val relatedDbAction = dbActions.plus(call.dbActions).first { db -> db.table.name.toLowerCase() == tableName.toLowerCase() }
+                            val param = it.parameters.find { p-> p.name == paramToTable.originalKey() }!!
+                            ParamUtil.bindParam(relatedDbAction, param, matchedInfo,  existingData = bindParamBasedOnDB || relatedDbAction.representExistingData )
+                                    .apply {
+                                        if(!this)
+                                            println("check!")
+                                    }
 
-                         if(pss.size > 1) pss[pss.size - 2] else ""
-                         */
-                        val table = if(paramToTable.confirmedMap.isNotEmpty()) randomness.choose(paramToTable.confirmedMap) else randomness.choose(paramToTable.targets)
-                        val relatedDbAction = dbActions.plus(call.dbActions).first { db -> db.table.name == table }
-                        val param = it.parameters.find { it.name == paramToTable.originalKey() }!!
-                        ParamUtil.bindParam(
-                                relatedDbAction,
-                                param,
-                                previousToken = ParamUtil.parseParams(paramToTable.additionalInfo).run {
-                                    if(this.size > 1) this[this.size - 1] else ""
-                                },
-                                existingData = bindParamBasedOnDB || relatedDbAction.representExistingData )
+                        }
                     }
                 }
     }
@@ -1209,29 +1378,12 @@ class ResourceManageService {
 
         bindCallWithDBAction(call, dbActions.plus(call.dbActions).toMutableList(), bindParamBasedOnDB = true)
 
-
-//        val paramsToBind =
-//                call.actions.filter { (it is RestCallAction) && it.verb != HttpVerb.POST }
-//                        .flatMap { (it as RestCallAction).parameters.map { p-> ParamRelatedToTable.getNotateKey(p.name.toLowerCase()).toLowerCase()  } }
-//
-//        val targets = call.resourceInstance.ar.paramsToTables.filter { paramsToBind.contains(it.key.toLowerCase())}
-//
-//        val tables = targets.map { it.value.targets.first().toString() }.toHashSet()
-//
-//        tables.forEach { tableName->
-//            if(dbRelatedToTables.contains(tableName)){
-//                val ps = targets.filter { it.value.targets.first().toString() == tableName }.map { it.value.additionalInfo }.toHashSet().toList()
-//                val relatedDbActions = dbActions.plus(call.dbActions).first { it.table.name == tableName }
-//                bindCallActionsWithDBAction(ps, call, listOf(relatedDbActions), true)
-//            }
-//        }
-
     }
 
     private fun getParamTableByAction(action : RestCallAction): Map<String, ParamRelatedToTable>{
         val resource = resourceCluster[action.path.toString()]!!
         return resource.paramsToTables.filter {
-            action.parameters.find { p-> ParamRelatedToTable.getNotateKey(p.name.toLowerCase()).toLowerCase()  == it.key } != null }
+            action.parameters.any { p-> ParamRelatedToTable.getNotateKey(p.name.toLowerCase()).toLowerCase() == it.key.toLowerCase() } }
     }
 
 
@@ -1284,190 +1436,105 @@ class ResourceManageService {
         DbActionUtils.repairBrokenDbActionsList(dbActions, randomness)
     }
 
-    private fun initDependencyBasedOnParamRelatedTables(){
-        resourceCluster.values
-                .flatMap { it.paramsToTables.values.flatMap { p2table-> p2table.targets as MutableList<String> }.toSet() }.toSet()
-                .forEach { derivedTab->
-                    //get probability of res -> derivedTab, we employ the max to represent the probability
-                    val relatedResources = paramToSameTable(null, derivedTab)
+    private fun deriveRelatedTables(ar: RestResource, param: Param) {
 
-                    val absRelatedResources = paramToSameTable(null, derivedTab, 1.0)
+        val map = mutableMapOf<String, MutableList<MatchedInfo>>()
 
-                    if(relatedResources.size > 1){
-                        if(absRelatedResources.size > 1){
-                            val mutualRelation = MutualResourcesRelations(absRelatedResources, 1.0, mutableSetOf(derivedTab))
+        val tables = ar.tokenToTable.flatMap { it.value }.toSet()
+        var tokens = deriveRelatedTables(ar, param, tables, map)
 
-                            absRelatedResources.forEach { res ->
-                                val relations = dependencies.getOrPut(res){ mutableListOf()}
-                                if(relations.find { r-> r.targets.containsAll(mutualRelation.targets) && r.additionalInfo == mutualRelation.additionalInfo } == null )
-                                    relations.add(mutualRelation)
-                            }
-                        }
+        if(map.isEmpty())
+            tokens = deriveRelatedTables(ar, param, dataInDB.keys.filter { !tables.any { t-> t.toLowerCase() == it.toLowerCase() } }.toSet(), map)
 
-                        val rest = if(absRelatedResources.size > 1) relatedResources.filter{!absRelatedResources.contains(it)} else relatedResources
-
-                        if(rest.size > 1){
-                            for(i  in 0..(rest.size-2)){
-                                val res = rest[i]
-                                val prob = probOfResToTable(res, derivedTab)
-                                for(j in i ..(rest.size - 1)){
-                                    val relatedRes = rest[j]
-                                    val relatedProb = probOfResToTable(relatedRes, derivedTab)
-
-                                    val res2Res = MutualResourcesRelations(mutableListOf(res, relatedRes), ((prob + relatedProb)/2.0), mutableSetOf(derivedTab))
-
-                                    dependencies.getOrPut(res){ mutableListOf()}.apply {
-                                        if(find { r -> r.targets.contains(res2Res.targets) && r.additionalInfo == res2Res.additionalInfo} == null)
-                                            add(res2Res)
-                                    }
-                                    dependencies.getOrPut(relatedRes){ mutableListOf()}.apply {
-                                        if(find { r -> r.targets.contains(res2Res.targets)  && r.additionalInfo == res2Res.additionalInfo } == null)
-                                            add(res2Res)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        if (map.isNotEmpty()) {
+            ar.updateParamTable(param.name, map, tokens)
+        }
     }
 
-//    private fun handleCallWithDBAction(ar: RestResource, call: ResourceRestCalls, forceInsert : Boolean, forceSelect : Boolean) : Boolean{
-//
-//        if(ar.paramsToTables.values.find { it.probability < ParserUtil.SimilarityThreshold || it.targets.isEmpty()} == null){
-//            var failToLinkWithResource = false
-//
-//            val paramsToBind =
-//                    ar.actions.filter { (it is RestCallAction) && it.verb != HttpVerb.POST }
-//                            .flatMap { (it as RestCallAction).parameters.map { p-> ParamRelatedToTable.getNotateKey(p.name.toLowerCase()).toLowerCase()  } }
-//
-//            /*
-//                key is table name
-//                value is a list of information about params
-//             */
-//            val tableToParams = mutableMapOf<String, MutableSet<String>>()
-//
-//            ar.paramsToTables.forEach { t, u ->
-//                if(paramsToBind.contains(t.toLowerCase())){
-//                    val params = tableToParams.getOrPut(u.targets.first().toString()){ mutableSetOf() }
-//                    params.add(u.additionalInfo)
-//                }
-//            }
-//
-//            snapshotDB()
-//
-//            val dbActions = mutableListOf<DbAction>()
-//            tableToParams.keys.forEach { tableName->
-//                if(forceInsert){
-//                    generateInserSql(tableName, dbActions)
-//                }else if(forceSelect){
-//                    if(getRowInDataInDB(tableName) != null && getRowInDataInDB(tableName)!!.isNotEmpty()) generateSelectSql(tableName, dbActions)
-//                    else failToLinkWithResource = true
-//                }else{
-//                    if(dataInDB[tableName]!= null ){
-//                        val size = getRowInDataInDB(tableName)!!.size
-//                        when{
-//                            size < config.minRowOfTable -> generateInserSql(tableName, dbActions).apply {
-//                                failToLinkWithResource = failToLinkWithResource || !this
-//                            }
-//                            else ->{
-//                                if(randomness.nextBoolean(config.probOfSelectFromDB)){
-//                                    generateSelectSql(tableName, dbActions)
-//                                }else{
-//                                    generateInserSql(tableName, dbActions).apply {
-//                                        failToLinkWithResource = failToLinkWithResource || !this
-//                                    }
-//                                }
-//                            }
-//                        }
-//                    }else
-//                        failToLinkWithResource = true
-//                }
-//            }
-//
-//            if(dbActions.isNotEmpty()){
-//                dbActions.removeIf { select->
-//                    select.representExistingData && dbActions.find { !it.representExistingData && select.table.name == it.table.name } != null
-//                }
-//
-//                DbActionUtils.randomizeDbActionGenes(dbActions.filter { !it.representExistingData }, randomness)
-//                repairDbActions(dbActions.filter { !it.representExistingData }.toMutableList())
-//
-//                tableToParams.values.forEach { ps ->
-//                    bindCallActionsWithDBAction(ps.toHashSet().toList(), call, dbActions)
-//                }
-//
-//                call.dbActions.addAll(dbActions)
-//            }
-//            return tableToParams.isNotEmpty() && !failToLinkWithResource
-//        }
-//        return false
-//    }
-
-
-    private fun deriveRelatedTables(ar: RestResource, startWithPostIfHas : Boolean = true){
-        val post = ar.postCreation.actions.firstOrNull()
-        val skip = if(startWithPostIfHas && post != null && (post as RestCallAction).path.isLastElementAParameter())  1 else 0
-
-        val missingParams = mutableListOf<String>()
-        var withParam = false
-
-        ar.tokens.values.reversed().asSequence().forEachIndexed { index, pathRToken ->
-            if(index >= skip){
-                if(pathRToken.isParameter){
-                    missingParams.add(0, pathRToken.getKey())
-                    withParam = true
-                }else if(withParam){
-                    missingParams.set(0, ParamUtil.generateParamId(arrayOf(pathRToken.getKey(), missingParams[0]))  )
-                }
-            }
+    private fun deriveRelatedTables(ar: RestResource, param: Param, tables: Set<String>, map: MutableMap<String, MutableList<MatchedInfo>>) : String{
+        val paramName = param.name
+        var tokens = ""
+        if (!ParamUtil.isGeneralName(paramName)){
+            deriveTextWithTable(paramName, tables, map, inputlevel = 0)
+            if(map.isNotEmpty()) tokens = paramName
         }
 
-        val lastToken = if(missingParams.isNotEmpty()) missingParams.last()
-        else if(ar.tokens.isNotEmpty()) ParamUtil.generateParamText(ar.tokens.map { it.value.getKey() })
-        else null
-        ar.actions
-                .filter { it is RestCallAction }
-                .flatMap { (it as RestCallAction).parameters }
-                .filter { it !is PathParam }
-                .forEach { p->
-                    when(p){
-                        is BodyParam -> missingParams.add(
-                                (if(lastToken!=null) ParamUtil.appendParam(lastToken, "") else "") +
-                                        (if(p.gene is ObjectGene && p.gene.refType != null && p.name.toLowerCase() != p.gene.refType.toLowerCase() )
-                                            ParamUtil.appendParam(p.name, p.gene.refType) else p.name)
-                        )
-                        is QueryParam -> missingParams.add((if(lastToken!=null) ParamUtil.appendParam(lastToken, "") else "") + p.name)
-                        else ->{
-                            //do nothing
+        if(map.isEmpty() && param is BodyParam){
+            param.gene.run {
+                if(this is ObjectGene)
+                    this.refType
+                else
+                    null
+            }?.let {
+                deriveTextWithTable(it, tables, map, inputlevel = 0)
+                if(map.isNotEmpty()) tokens = it
+            }
+        }
+        if (map.isEmpty()) {
+            val beforeTokens = if(ar.tokens[paramName]!=null && ar.tokens[paramName]!!.isParameter)
+                ar.tokens.filter { it.value.level < ar.tokens[paramName]!!.level }.keys.sortedBy { ar.tokens[it]!!.level }
+            else ar.tokens.keys
+
+            var previousTokens = ""
+
+            beforeTokens.reversed().forEachIndexed  stopToken@{index, c ->
+                previousTokens = "$c$previousTokens"
+
+                if(ParamUtil.isGeneralName(paramName)){
+                    var text = "$previousTokens$paramName"
+                    deriveTextWithTable(text,tables, map, inputlevel = index+1)
+                    if (map.isNotEmpty()) {
+                        tokens = text
+                        return@stopToken
+                    }
+                }else{
+                    deriveTextWithTable(previousTokens,tables, map,inputlevel = index+1)
+                    if (map.isNotEmpty()) {
+                        tokens = previousTokens
+                        return@stopToken
+                    }
+                }
+
+                if(index > 0){
+                    deriveTextWithTable(c,tables, map, inputlevel = index+1)
+                    if (map.isNotEmpty()) {
+                        tokens = c
+                        return@stopToken
+                    }
+                }
+
+
+            }
+        }
+        return tokens
+    }
+
+
+    /**
+     * derive relationship between parameter and tables
+     * e.g., a rest action /A/{a}/B/{b} with parameters c, d
+     *
+     */
+    private fun deriveRelatedTables(ar: RestResource, startWithPostIfHas : Boolean = true){
+            val params = mutableSetOf<String>()
+            var flag = false
+            ar.actions.forEach { a ->
+                if(a is RestCallAction){
+                    if (!flag){
+                        a.parameters.filter { it is PathParam }.forEach { p->
+                            deriveRelatedTables(ar, p)
+                        }
+                        flag = true
+                    }
+                    a.parameters.filter { it !is PathParam }.forEach { p->
+                        if(!params.contains(p.name)){
+
+                            deriveRelatedTables(ar, p)
+                            params.add(p.name)
                         }
                     }
                 }
-
-        missingParams.forEach { pname->
-            val params = ParamUtil.parseParams(pname)
-
-            var similarity = 0.0
-            var tableName = ""
-
-            params.reversed().forEach findP@{
-                dataInDB.forEach { t, u ->
-                    val score = ParserUtil.stringSimilarityScore(it, t)
-                    if(score > similarity){
-                        similarity =score
-                        tableName = t
-                    }
-                }
-                if(similarity >= ParserUtil.SimilarityThreshold){
-                    return@findP
-                }
             }
-
-            val p = params.last()
-            val rt = ParamRelatedToTable(p, if(getRowInDataInDB(tableName) != null) mutableListOf(tableName) else mutableListOf(), similarity, pname)
-            ar.paramsToTables.getOrPut(rt.notateKey()){
-                rt
-            }
-        }
     }
 
 

@@ -80,7 +80,7 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
         }
 
         actionCluster.clear()
-        RestActionBuilder.addActionsFromSwagger(swagger, actionCluster, infoDto.restProblem?.endpointsToSkip ?: listOf())
+        RestActionBuilder.addActionsFromSwagger(swagger, actionCluster, infoDto.restProblem?.endpointsToSkip ?: listOf(), doParserDescription = config.doesApplyTokenParser)
 
         setupAuthentication(infoDto)
 

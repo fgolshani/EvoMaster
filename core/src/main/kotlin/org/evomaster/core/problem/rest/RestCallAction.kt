@@ -43,6 +43,8 @@ class RestCallAction(
         var locationId: String? = null
 ) : RestAction {
 
+    private var description : String? = null
+
     /**
      * tokens is used to present a set of tokens exist in the scheme, e.g., swagger specification
      * key is a parsed token
@@ -139,6 +141,7 @@ class RestCallAction(
 
     fun initTokens(description : String?){
         if(description!= null){
+            this.description = description
             tokens.clear()
             ParserUtil.parseAction(this, description, tokens)
         }
@@ -168,4 +171,6 @@ class RestCallAction(
             }
         }
     }
+
+    fun getDescription() : String? = description
 }

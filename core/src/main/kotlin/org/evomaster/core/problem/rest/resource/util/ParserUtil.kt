@@ -10,6 +10,7 @@ import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import java.util.*
 import edu.stanford.nlp.ling.tokensregex.TokenSequencePattern
 import org.evomaster.core.problem.rest.RestCallAction
+import org.evomaster.core.problem.rest.RestPath
 import org.evomaster.core.problem.rest.param.*
 import org.evomaster.core.problem.rest.resource.model.ActionRToken
 import org.evomaster.core.problem.rest.resource.model.PathRToken
@@ -45,41 +46,30 @@ class ParserUtil {
 
         private fun formatKey(source : String) : String = source.toLowerCase()
 
-        fun parsePathTokens(path: String, map : MutableMap<String, PathRToken>){
-            var level = 1
-            val tokens = getNlpTokens(convertPathText(path))
+        fun parsePathTokens(path: RestPath, map : MutableMap<String, PathRToken>){
+            val tokens = getNlpTokens(convertPathText(path.toString()))
 
-            path.split("/").filter { s -> !s.isBlank() }
-                    .forEach { s ->
-                        /*
-                            TODO: technically, leading spaces are valid in a URI.
-                            Furthermore, need to check if things like /x-{id} are possible,
-                            and how Swagger handle endpoint encoding
-                         */
-                        val trimmed = s.trim()
-                        if (trimmed.startsWith("{")) {
-                            if (!trimmed.endsWith("}")) {
-                                throw IllegalArgumentException("Opening { was not matched by closing } in: $path")
-                            }
-                            val token = tokens.find { it.originalText() == trimmed.substring(1, trimmed.lastIndex) }!!
-                            map.putIfAbsent(formatKey(token.originalText()), PathRToken(token.originalText(), token.lemma(), -1, true, isVerbByTag(token.tag()!!)))
+            path.getElements().forEachIndexed {level, ts ->
+                ts.forEach {  t ->
+                    if(path.getVariableNames().contains(t)){
+                        val token = tokens.find { it.originalText() == t }!!
+                        map.putIfAbsent(formatKey(token.originalText()), PathRToken(token.originalText(), token.lemma(), level, true, isVerbByTag(token.tag()!!)))
+                    }else{
+                        val token = tokens.find { it.originalText() == t }
+                        if(token == null){
+                            tokens
+                                    .filter { t.contains(it.originalText()) }
+                                    .forEach { t->
+                                        map.putIfAbsent(formatKey(t.originalText()), PathRToken(t.originalText(), t.lemma(), level, false, isVerbByTag(t.tag()!!)))
+                                    }
 
-                        } else {
-                            val token = tokens.find { it.originalText() == trimmed }
-                            if(token == null){
-                                tokens
-                                        .filter { trimmed.contains(it.originalText()) }
-                                        .forEach { t->
-                                            map.putIfAbsent(formatKey(t.originalText()), PathRToken(t.originalText(), t.lemma(), level, false, isVerbByTag(t.tag()!!)))
-                                        }
+                        }else{
+                            map.putIfAbsent(formatKey(token.originalText()), PathRToken(token.originalText(), token.lemma(), level, false, isVerbByTag(token.tag()!!)))
 
-                            }else{
-                                map.putIfAbsent(formatKey(token.originalText()), PathRToken(token.originalText(), token.lemma(), level, false, isVerbByTag(token.tag()!!)))
-
-                            }
-                            level++
                         }
                     }
+                }
+            }
         }
 
         fun parseAction(action: RestCallAction, description: String, map : MutableMap<String, ActionRToken>){
@@ -242,24 +232,6 @@ class ParserUtil {
 
         private fun load(resourcePath: String) : Swagger{
             return SwaggerParser().read(resourcePath)
-        }
-
-        fun process(path : String){
-            val swagger = load(path)
-            swagger.paths.apply {
-                forEach { t, u ->
-                    u.operations.forEach { op->
-                        if(!op.description.isNullOrBlank()){
-                            println("--path: $t")
-                            parsePathTokens(t, mutableMapOf())
-                            println("----description: ${op.description}")
-//                            parseActionTokens(op.description, mutableMapOf())
-                        }
-
-                    }
-                }
-            }
-
         }
 
         fun stringSimilarityScore(str1 : String, str2 : String, algorithm : SimilarityAlgorithm =SimilarityAlgorithm.Trigrams): Double{

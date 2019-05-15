@@ -17,6 +17,9 @@ class SearchStatusUpdater : SearchListener{
     @Inject
     private lateinit var config: EMConfig
 
+    @Inject
+    private lateinit var archive: Archive<*>
+
     private var passed = -1
 
     private var extra = ""
@@ -64,7 +67,7 @@ class SearchStatusUpdater : SearchListener{
             }
 
             upLineAndErase()
-            println("$consumedMessage $passed%")
+            println("$consumedMessage $passed%: Covered ${archive.numberOfCoveredTargets()}, Reached but not covered ${archive.numberOfReachedButNotCoveredTargets()}")
 
             if(config.e_u1f984){
                 updateExtra()

@@ -6,10 +6,10 @@ class LocalMain {
                     cs : String,
                     run : Int = 1,
                     resourceSampleStrategy : String = EMConfig.ResourceSamplingStrategy.ConArchive.toString(),
-                    probOfSmartSampling : Double = 0.5,
+                    probOfSmartSampling : Double = 0.75,
                     maxTestSize : Int = 10,
                     isStoppedByActions : Boolean = true,
-                    budget: Int = 100000,
+                    budget: Int = 10000,
                     baseFolder : String = "/Users/mazh001/Documents/Workspace/temp-results"
 
         ): Array<String> {
@@ -28,7 +28,7 @@ class LocalMain {
                     //resource-based sampling
                     "--probOfSmartSampling", probOfSmartSampling.toString(),
                     "--resourceSampleStrategy",resourceSampleStrategy,
-                    "--probOfEnablingResourceDependencyHeuristics", 0.0.toString(),
+                    "--probOfEnablingResourceDependencyHeuristics", 0.5.toString(),
 
 
 //                    //archive-based mutation

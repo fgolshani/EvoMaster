@@ -2,6 +2,7 @@ package org.evomaster.core.problem.rest.resource.model.dependency
 
 import edu.stanford.nlp.time.SUTime
 import org.evomaster.core.problem.rest.resource.db.SQLKey
+import org.evomaster.core.problem.rest.resource.util.MatchedInfo
 
 /**
  * key relies on target
@@ -53,15 +54,26 @@ class ParamRelatedToTable (
 
     /**
      * key is table name
-     * value is similarity
+     * value is detailed similarity
      */
-    var confirmedMap : MutableMap<String, Double> = mutableMapOf()
+    var derivedMap : MutableMap<String, MutableList<MatchedInfo>> = mutableMapOf()
+    /**
+     * whether the related table is confirmed
+     */
+    var confirmedSet : MutableSet<String> = mutableSetOf()
 
     companion object {
         fun getNotateKey(paramName : String): String = "PARM:$paramName"
     }
 
     override fun notateKey() : String = getNotateKey(originalKey())
+
+
+    fun getBestDerived() : Map<String, List<MatchedInfo>> {
+        val best = derivedMap.values.flatMap { it.map { m-> m.similarity } }.toHashSet().max()
+        return derivedMap.filter { it.value.any { m -> m.similarity == best } }.map { Pair(it.key, it.value.filter { m-> m.similarity == best }) }.toMap()
+    }
+
 }
 
 class ActionRelatedToTable(
@@ -124,8 +136,8 @@ open class ResourceRelatedToResources(
  *          Note that related table might be derived based on token parser, not confirmed regarding evomaster driver.
  *          [confirmedSet] is used to represent whether the mutual relation is confirmed.
  */
-class MutualResourcesRelations(mutualResources: List<String>, probability: Double, tables:Collection<String>)
-    : ResourceRelatedToResources(mutualResources, mutualResources.toMutableList(), probability, tables.joinToString(TABLE_SEPARATOR)){
+class MutualResourcesRelations(mutualResources: List<String>, probability: Double, var referredTables : MutableSet<String> = mutableSetOf())
+    : ResourceRelatedToResources(mutualResources, mutualResources.toMutableList(), probability, ""){
 
     companion object {
         private const val TABLE_SEPARATOR = ";"
@@ -137,15 +149,17 @@ class MutualResourcesRelations(mutualResources: List<String>, probability: Doubl
      */
     var confirmedSet : MutableSet<String> = mutableSetOf()
 
+
+
     override fun getName(): String {
         return "MutualRelations:${notateKey()}"
     }
 
+//    fun getRelatedTables() : Set<String>?{
+//        if(additionalInfo.isBlank()) return null
+//        return additionalInfo.split(TABLE_SEPARATOR).toHashSet()
+//    }
 
-    fun getRelatedTables() : Set<String>?{
-        if(additionalInfo.isBlank()) return null
-        return additionalInfo.split(TABLE_SEPARATOR).toHashSet()
-    }
 }
 
 class SelfResourcesRelation(path : String, probability: Double = 1.0, info: String = "") : ResourceRelatedToResources(mutableListOf(path), mutableListOf(path), probability, info)

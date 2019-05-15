@@ -149,4 +149,38 @@ class ResourceRestIndividual (
         }
     }
 
+    fun validateSwap(first : Int, second : Int) : Boolean{
+        val position = getResourceCalls()[first].shouldBefore.map { r ->
+            getResourceCalls().indexOfFirst { it.resourceInstance.getAResourceKey() == r }
+        }
+
+        if(!position.none { it > second }) return false
+
+        getResourceCalls().subList(0, second).find { it.shouldBefore.contains(getResourceCalls()[second].resourceInstance.getAResourceKey()) }?.let {
+            return getResourceCalls().indexOf(it) < first
+        }
+        return true
+
+    }
+
+    /**
+     * @return movable position
+     */
+    fun getMovablePosition(position: Int) : List<Int>{
+       return (0..(getResourceCalls().size-1))
+               .filter {
+                   if(it < position) validateSwap(it, position) else if(it > position) validateSwap(position, it) else false
+               }
+    }
+
+    /**
+     * @return whether the call at the position is movable
+     */
+    fun isMovable(position: Int) : Boolean{
+        return (0..(getResourceCalls().size-1))
+                .any {
+                    if(it < position) validateSwap(it, position) else if(it > position) validateSwap(position, it) else false
+                }
+    }
+
 }

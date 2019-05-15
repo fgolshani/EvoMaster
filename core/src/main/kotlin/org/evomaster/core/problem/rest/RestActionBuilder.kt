@@ -23,7 +23,8 @@ class RestActionBuilder {
 
         fun addActionsFromSwagger(swagger: Swagger,
                                   actionCluster: MutableMap<String, Action>,
-                                  endpointsToSkip: List<String> = listOf()) {
+                                  endpointsToSkip: List<String> = listOf(),
+                                  doParserDescription : Boolean = false) {
 
             actionCluster.clear()
 
@@ -55,6 +56,7 @@ class RestActionBuilder {
                             repairParams(params, restPath)
 
                             val action = RestCallAction("$verb$restPath${idGenerator.incrementAndGet()}", verb, restPath, params)
+                            if(doParserDescription) action.initTokens(o.value.description)
 
                             actionCluster.put(action.getName(), action)
                         }

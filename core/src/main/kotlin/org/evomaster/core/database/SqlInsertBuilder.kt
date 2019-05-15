@@ -343,7 +343,9 @@ class SqlInsertBuilder(
             throw IllegalStateException("No Database Executor registered for this object")
         }
 
-        val table = tables[tableName]!!
+        val table = tables.values.find { it.name.toLowerCase() == tableName.toLowerCase() }
+                ?: throw  IllegalArgumentException("cannot find the table by name $tableName")
+
 
         val pks = table.columns.filter { it.primaryKey }
         val cols = table.columns.toList()
@@ -514,5 +516,9 @@ class SqlInsertBuilder(
 
 
         return selection
+    }
+
+    fun getTableInfo(tableName: String) : Table?{
+        return tables.values.find { it.name == tableName || it.name.toLowerCase() == tableName.toLowerCase() || it.name.toUpperCase() == tableName.toUpperCase() }
     }
 }

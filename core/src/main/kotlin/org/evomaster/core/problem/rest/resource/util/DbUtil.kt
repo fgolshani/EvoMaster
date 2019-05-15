@@ -78,5 +78,8 @@ class DbUtil {
             }
             return false
         }
+
+        fun formatTableName(tableName: String) : String = tableName.toLowerCase()
+
     }
 }

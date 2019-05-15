@@ -27,6 +27,16 @@ class ResourceRestCalls(
 
     var status = ResourceStatus.NOT_FOUND
 
+    /**
+     * whether the call can be deleted during structure mutation
+     */
+    var isDeletable = true
+
+    /**
+     * this call should be before [shouldBefore]
+     */
+    var shouldBefore = mutableListOf<String>()
+
     fun copy() : ResourceRestCalls{
         val copy = ResourceRestCalls(template, resourceInstance.copy(), actions.map { a -> a.copy() as RestAction}.toMutableList())
         if(dbActions.isNotEmpty()){
@@ -34,6 +44,10 @@ class ResourceRestCalls(
                 copy.dbActions.add(db.copy() as DbAction)
             }
         }
+
+        copy.isDeletable = isDeletable
+        copy.shouldBefore.addAll(shouldBefore)
+
         return copy
     }
 

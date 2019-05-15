@@ -2,6 +2,7 @@ package org.evomaster.core.problem.rest.resource.service
 
 import com.google.inject.Inject
 import org.evomaster.core.problem.rest.RestCallAction
+import org.evomaster.core.problem.rest.auth.AuthenticationInfo
 import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
 import org.evomaster.core.problem.rest.resource.model.ResourceRestCalls
 import org.evomaster.core.search.EvaluatedIndividual
@@ -28,16 +29,19 @@ class ResourceRestStructureMutator : StructureMutator() {
     private fun mutateRestResourceCalls(ind: ResourceRestIndividual) {
 
         val num = ind.getResourceCalls().size
-        executedStructureMutator = randomness.choose(
-                MutationType.values()
-                        .filter {  num >= it.minSize }
-                        .filterNot{
-                            (ind.seeActions().size == config.maxTestSize && it == MutationType.ADD) ||
-                                    //if the individual includes all resources, ADD and REPLACE are not applicable
-                                    (ind.getResourceCalls().map {
-                                        it.resourceInstance.getKey()
-                                    }.toSet().size >= rm.getResourceCluster().size && (it == MutationType.ADD || it == MutationType.REPLACE))
-                        })
+        val candidates = MutationType.values()
+                .filter {  num >= it.minSize }
+                .filterNot{
+                    (ind.seeActions().size == config.maxTestSize && it == MutationType.ADD) ||
+                            //if the individual includes all resources, ADD and REPLACE are not applicable
+                            (ind.getResourceCalls().map {
+                                it.resourceInstance.getKey()
+                            }.toSet().size >= rm.getResourceCluster().size && (it == MutationType.ADD || it == MutationType.REPLACE)) ||
+                            //if the size of deletable individual is less 2, Delete and SWAP are not applicable
+                            (ind.getResourceCalls().filter(ResourceRestCalls::isDeletable).size < 2 && (it == MutationType.DELETE || it == MutationType.SWAP))
+
+                }
+        executedStructureMutator = randomness.choose(candidates)
         when(executedStructureMutator){
             MutationType.ADD -> handleAdd(ind)
             MutationType.DELETE -> handleDelete(ind)
@@ -72,7 +76,8 @@ class ResourceRestStructureMutator : StructureMutator() {
                 rm.handleDelNonDepResource(ind)
             }else null
         val pos = if(removed != null) ind.getResourceCalls().indexOf(removed)
-            else  randomness.nextInt(0, ind.getResourceCalls().size - 1)
+            else ind.getResourceCalls().indexOf(randomness.choose(ind.getResourceCalls().filter(ResourceRestCalls::isDeletable)))
+        //randomness.nextInt(0, ind.getResourceCalls().size - 1)
 
         ind.removeResourceCall(pos)
     }
@@ -83,6 +88,7 @@ class ResourceRestStructureMutator : StructureMutator() {
     private fun handleSwap(ind: ResourceRestIndividual){
         val fromDependency = rm.isDependencyNotEmpty()
                 && randomness.nextBoolean(config.probOfEnablingResourceDependencyHeuristics)
+
         if(fromDependency){
             val pair = rm.handleSwapDepResource(ind)
             if(pair!=null){
@@ -90,8 +96,24 @@ class ResourceRestStructureMutator : StructureMutator() {
                 return
             }
         }
-        val candidates = randomness.choose(Array(ind.getResourceCalls().size){i -> i}.toList(), 2)
-        ind.swapResourceCall(candidates[0], candidates[1])
+
+        if(config.probOfEnablingResourceDependencyHeuristics > 0.0){
+            val position = (0..(ind.getResourceCalls().size-1)).toMutableList()
+            while (position.isNotEmpty()){
+                val chosen = randomness.choose(position)
+                if(ind.isMovable(chosen)) {
+                    val moveTo = randomness.choose(ind.getMovablePosition(chosen))
+                    if(chosen < moveTo) ind.swapResourceCall(chosen, moveTo)
+                    else ind.swapResourceCall(moveTo, chosen)
+                    return
+                }
+                position.remove(chosen)
+            }
+            throw IllegalStateException("the individual cannot apply swap mutator!")
+        }else{
+            val candidates = randomness.choose(Array(ind.getResourceCalls().size){i -> i}.toList(), 2)
+            ind.swapResourceCall(candidates[0], candidates[1])
+        }
     }
 
     /**
@@ -101,6 +123,7 @@ class ResourceRestStructureMutator : StructureMutator() {
      * the added resource can be its dependent resource with a probability i.e.,[config.probOfEnablingResourceDependencyHeuristics]
      */
     private fun handleAdd(ind: ResourceRestIndividual){
+        val auth = (ind.seeActions().find { it is RestCallAction } as RestCallAction)?.auth
 
         val sizeOfCalls = ind.getResourceCalls().size
 
@@ -118,7 +141,7 @@ class ResourceRestStructureMutator : StructureMutator() {
             val randomCall =  rm.handleAddResource(ind, max)
             val pos = randomness.nextInt(0, ind.getResourceCalls().size)
 
-            maintainAuth(ind, randomCall)
+            maintainAuth(auth, randomCall)
             ind.addResourceCall(pos, randomCall)
         }else{
             var addPos : Int? = null
@@ -135,7 +158,7 @@ class ResourceRestStructureMutator : StructureMutator() {
 //                ind.getResourceCalls().size
 //            else
 //                0
-            maintainAuth(ind, pair.second)
+            maintainAuth(auth, pair.second)
             ind.addResourceCall( addPos, pair.second)
         }
 
@@ -146,6 +169,8 @@ class ResourceRestStructureMutator : StructureMutator() {
      * replace one of resource call with other resource
      */
     private fun handleReplace(ind: ResourceRestIndividual){
+        val auth = (ind.seeActions().find { it is RestCallAction } as RestCallAction)?.auth
+
         var max = config.maxTestSize
         ind.getResourceCalls().forEach { max -= it.actions.size }
 
@@ -159,7 +184,9 @@ class ResourceRestStructureMutator : StructureMutator() {
         }else{
             null
         }
-        if(pos == null) pos = randomness.nextInt(0, ind.getResourceCalls().size - 1)
+        if(pos == null)
+            pos = ind.getResourceCalls().indexOf(randomness.choose(ind.getResourceCalls().filter(ResourceRestCalls::isDeletable)))
+            //randomness.nextInt(0, ind.getResourceCalls().size - 1)
 
         max += ind.getResourceCalls()[pos].actions.size
 
@@ -180,7 +207,7 @@ class ResourceRestStructureMutator : StructureMutator() {
             }
         }
 
-        maintainAuth(ind, call!!)
+        maintainAuth(auth, call!!)
         ind.addResourceCall(pos, call!!)
     }
 
@@ -188,6 +215,8 @@ class ResourceRestStructureMutator : StructureMutator() {
      *  modify one of resource call with other template
      */
     private fun handleModify(ind: ResourceRestIndividual){
+        val auth = (ind.seeActions().find { it is RestCallAction } as RestCallAction)?.auth
+
         val pos = randomness.nextInt(0, ind.getResourceCalls().size-1)
         val old = ind.getResourceCalls()[pos]
         var max = config.maxTestSize
@@ -198,19 +227,19 @@ class ResourceRestStructureMutator : StructureMutator() {
             new = old.resourceInstance.ar.sampleOneAction(null, randomness, max)
         }
         assert(new != null)
-        maintainAuth(ind, new)
+        maintainAuth(auth, new)
         ind.replaceResourceCall(pos, new)
     }
 
     /**
-     * for ResourceRestIndividual, dbaction(s) has been determined (e.g., whether involves db, and bind values with actions) when an individual is created
+     * for ResourceRestIndividual, dbaction(s) has been distributed to each resource call [ResourceRestCalls]
      */
     override fun addInitializingActions(individual: EvaluatedIndividual<*>) {
         //do noting
     }
 
-    private fun maintainAuth(ind: ResourceRestIndividual, mutated: ResourceRestCalls){
-        (ind.seeActions().find { it is RestCallAction } as RestCallAction)?.auth?.let { auth->
+    private fun maintainAuth(authInfo: AuthenticationInfo?, mutated: ResourceRestCalls){
+        authInfo?.let { auth->
             mutated.actions.forEach { if(it is RestCallAction) it.auth = auth }
         }
     }

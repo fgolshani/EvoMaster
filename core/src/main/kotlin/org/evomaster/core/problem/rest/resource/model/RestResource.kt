@@ -8,6 +8,7 @@ import org.evomaster.core.problem.rest.resource.db.SQLKey
 import org.evomaster.core.problem.rest.resource.model.dependency.ActionRelatedToTable
 import org.evomaster.core.problem.rest.resource.model.dependency.CreationChain
 import org.evomaster.core.problem.rest.resource.model.dependency.ParamRelatedToTable
+import org.evomaster.core.problem.rest.resource.util.MatchedInfo
 import org.evomaster.core.problem.rest.resource.util.ParamUtil
 import org.evomaster.core.problem.rest.resource.util.ParserUtil
 import org.evomaster.core.problem.rest.resource.util.RTemplateHandler
@@ -65,6 +66,8 @@ class RestResource(
 
     val tokens : MutableMap<String, PathRToken> = mutableMapOf()
 
+    val tokenToTable : MutableMap<String, Set<String>> = mutableMapOf()
+
     /**
      * HTTP methods under the resource, including possible POST in its ancestors'
      *
@@ -119,10 +122,33 @@ class RestResource(
 
     }
 
-    fun initTokens(){
+    fun initTokens(tables : Set<String>){
         if(path.getStaticTokens().isNotEmpty()){
             tokens.clear()
-            ParserUtil.parsePathTokens(this.path.toString(), tokens)
+            ParserUtil.parsePathTokens(this.path, tokens)
+            tokens.values.forEach { p ->
+                tables.filter { ParserUtil.stringSimilarityScore(it.toLowerCase(), p.getKey()) >= ParserUtil.SimilarityThreshold }.let {
+                    if(it.isNotEmpty())
+                        tokenToTable.put(p.getKey(), it.toSet())
+                }
+            }
+        }
+    }
+
+    fun updateParamTable(paramName : String, map: MutableMap<String, MutableList<MatchedInfo>>, tokens : String){
+        val key = ParamRelatedToTable.getNotateKey(paramName)
+        paramsToTables[key].let { pToTable ->
+            if (pToTable == null){
+                val p = ParamRelatedToTable(key, map.keys.toMutableList(), map.values.flatMap { it.map { it.similarity }  }.max()!!, tokens)
+                p.derivedMap.putAll(map)
+                paramsToTables.put(key, p)
+            }else{
+                pToTable.additionalInfo = ParamUtil.appendParam(pToTable.additionalInfo, tokens)
+                map.filter { !pToTable.targets.contains(it) }.forEach { t, u ->
+                    (pToTable.targets as MutableList<String>).add(t)
+                    pToTable.derivedMap.put(t, u)
+                }
+            }
         }
     }
 
@@ -167,7 +193,7 @@ class RestResource(
 
     fun updateActionRelatedToTable(verb : String, dto: ExecutionDto, existingTables : Set<String>) : Boolean{
         val tables = mutableListOf<String>().plus(dto.deletedData).plus(dto.updatedData.keys).plus(dto.insertedData.keys).plus(dto.queriedData.keys)
-                .filter { existingTables.contains(it) }.toHashSet()
+                .filter { existingTables.contains(it) || existingTables.any { e->e.toLowerCase() == it.toLowerCase() }}.toHashSet()
 
         if (tables.isEmpty()) return false
 
@@ -187,81 +213,79 @@ class RestResource(
         access.updateTableWithFields(dto.queriedData, SQLKey.SELECT)
         access.updateTableWithFields(dto.updatedData, SQLKey.UPDATE)
 
-        if(doesUpdateParamTable || actionToTables.size < actions.filter { it is RestCallAction }.size)
-            updateParamToTable()
-
-        return doesUpdateParamTable
+        return doesUpdateParamTable || actionToTables.size < actions.filter { it is RestCallAction }.size
     }
 
-    private fun updateParamToTable(){
-        actions.forEach {action->
-            if(action is RestCallAction){
-                action.parameters.forEach { param ->
-                    val tables = actionToTables[action.verb.toString()]
-                    if(tables != null && tables.isNotEmpty()){
-
-                        val tableScore = mutableMapOf<String, Double>()
-
-                        tables.forEach { rt->
-                            //TODO handle the situation whereby field is *
-                            rt.tableWithFields.forEach { tab, fields ->
-                                val score = ParserUtil.stringSimilarityScore(param.name, tab)
-                                val current = tableScore.getOrPut(tab){0.0}
-                                if(score > current){
-                                    tableScore.replace(tab, score)
-                                }
-
-                                fields.forEach { f ->
-                                    f.field.forEach { ff ->
-                                        val scoref = ParserUtil.stringSimilarityScore(param.name, ff)
-                                        val currentf = tableScore.getOrPut(tab){0.0}
-                                        if(scoref > currentf){
-                                            tableScore.replace(tab, scoref)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-
-                        if(tableScore.isNotEmpty()){
-                            val best = tableScore.values.max()!!
-                            if(best > ParserUtil.SimilarityThreshold){
-                                val tables = tableScore.filter { it.value == best }
-                                var ptoTable = paramsToTables.get(ParamRelatedToTable.getNotateKey(param.name))
-                                if(ptoTable == null){
-                                    ptoTable = ParamRelatedToTable(param.name, tables.keys.toMutableList(), best)
-                                    paramsToTables.put(ptoTable.notateKey(), ptoTable)
-
-                                }else{
-                                    if(!ptoTable.targets.containsAll(tables.keys)){
-                                        tables.keys.filter { !ptoTable.targets.contains(it) }.forEach { n->
-                                            (ptoTable.targets as MutableList<String>).add(n)
-                                        }
-                                    }
-                                    if(best > ptoTable.probability)
-                                        ptoTable.probability = best
-                                }
-
-                                tables.forEach { t, u ->
-                                    if(ptoTable.confirmedMap.containsKey(t))
-                                        ptoTable.confirmedMap.replace(t, max(u, ptoTable.confirmedMap[t]!!))
-                                    else
-                                        ptoTable.confirmedMap.put(t, u)
-                                }
-                            }
-                        }
-
-                    }
-                }
-            }
-        }
-    }
+//    private fun updateParamToTable(){
+//        actions.forEach {action->
+//            if(action is RestCallAction){
+//                action.parameters.forEach { param ->
+//                    val tables = actionToTables[action.verb.toString()]
+//                    if(tables != null && tables.isNotEmpty()){
+//
+//                        val tableScore = mutableMapOf<String, Double>()
+//
+//                        tables.forEach { rt->
+//                            //TODO handle the situation whereby field is *
+//                            rt.tableWithFields.forEach { tab, fields ->
+//                                val score = ParserUtil.stringSimilarityScore(param.name, tab)
+//                                val current = tableScore.getOrPut(tab){0.0}
+//                                if(score > current){
+//                                    tableScore.replace(tab, score)
+//                                }
+//
+//                                fields.forEach { f ->
+//                                    f.field.forEach { ff ->
+//                                        val scoref = ParserUtil.stringSimilarityScore(param.name, ff)
+//                                        val currentf = tableScore.getOrPut(tab){0.0}
+//                                        if(scoref > currentf){
+//                                            tableScore.replace(tab, scoref)
+//                                        }
+//                                    }
+//                                }
+//                            }
+//                        }
+//
+//
+//                        if(tableScore.isNotEmpty()){
+//                            val best = tableScore.values.max()!!
+//                            if(best > ParserUtil.SimilarityThreshold){
+//                                val tables = tableScore.filter { it.value == best }
+//                                var ptoTable = paramsToTables.get(ParamRelatedToTable.getNotateKey(param.name))
+//                                if(ptoTable == null){
+//                                    ptoTable = ParamRelatedToTable(param.name, tables.keys.toMutableList(), best)
+//                                    paramsToTables.put(ptoTable.notateKey(), ptoTable)
+//
+//                                }else{
+//                                    if(!ptoTable.targets.containsAll(tables.keys)){
+//                                        tables.keys.filter { !ptoTable.targets.contains(it) }.forEach { n->
+//                                            (ptoTable.targets as MutableList<String>).add(n)
+//                                        }
+//                                    }
+//                                    if(best > ptoTable.probability)
+//                                        ptoTable.probability = best
+//                                }
+//
+//                                tables.forEach { t, u ->
+//                                    if(ptoTable.confirmedMap.containsKey(t))
+//                                        ptoTable.confirmedMap.replace(t, max(u, ptoTable.confirmedMap[t]!!))
+//                                    else
+//                                        ptoTable.confirmedMap.put(t, u)
+//                                }
+//                            }
+//                        }
+//
+//                    }
+//                }
+//            }
+//        }
+//    }
 
     fun getConfirmedRelatedTables() : Set<String> = actionToTables.values.flatMap { it.flatMap { a -> a.tableWithFields.keys } }.toSet()
 
     fun getConfirmedRelatedTables(action: RestCallAction) : Set<String>? = actionToTables[action.verb.toString()]?.flatMap{ a -> a.tableWithFields.keys  }?.toSet()
 
+    fun getDerivedRelatedTables() : Set<String> = tokenToTable.flatMap { it.value }.plus(paramsToTables.values.flatMap { it.targets as MutableList<String> }.toHashSet()).toSet()
 
     //if only get
     fun isIndependent() : Boolean{

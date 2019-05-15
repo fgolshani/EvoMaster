@@ -348,6 +348,37 @@ class ParamUtil {
             return true
         }
 
+        fun bindParam(dbAction: DbAction, param : Param, matchedInfo: MatchedInfo, existingData : Boolean) : Boolean{
+
+            val gene = if(matchedInfo.matched.toLowerCase() == dbAction.table.name.toLowerCase()){
+                dbAction.seeGenes().find { it is SqlPrimaryKeyGene }.run {
+                    if(this == null)  dbAction.seeGenes().find { containGeneralName(it.name) }
+                    else this
+                }
+            }else{
+                dbAction.seeGenes().find { it.name.toLowerCase() == matchedInfo.matched.toLowerCase() }
+            }
+
+            if(gene != null){
+                if(gene!! is SqlPrimaryKeyGene || gene!! is SqlForeignKeyGene || gene!! is SqlAutoIncrementGene){
+                    /*
+                        if gene of dbaction is PK, FK or AutoIncrementGene,
+                            bind gene of Param according to the gene from dbaction
+                     */
+                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), false)
+                }else{
+                    /*
+                        If the data is existing in db, bind gene of Param according to the gene from dbaction
+                        otherwise, bind gene of action according to rest action, i.e., Gene of Param
+                     */
+                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), !existingData)
+                }
+
+                return true
+            }
+            return false
+        }
+
         fun compareDBGene(dbAction: DbAction, gene: Gene, pName: String, previousToken : String) : Double{
             val list = mutableListOf<Double>()
             ParserUtil.stringSimilarityScore(gene.name, pName).apply {
@@ -367,9 +398,11 @@ class ParamUtil {
             return list.max()!!
         }
 
-        private fun isGeneralName(text : String) : Boolean{
+        fun isGeneralName(text : String) : Boolean{
             return GENERAL_NAMES.contains(text.toLowerCase())
         }
+
+        private fun containGeneralName(text : String) : Boolean = GENERAL_NAMES.any { text.toLowerCase().contains(it) }
 
         private fun genGeneNameInPath(names : MutableList<String>, tokensInPath : List<String>?) : String{
             tokensInPath?.let {
@@ -377,6 +410,7 @@ class ParamUtil {
             }
             return names.joinToString(separator)
         }
+
 
         private fun getGeneNamesInPath(parameters: List<Param>, gene : Gene) : MutableList<String>? {
             parameters.forEach {  p->
