@@ -82,7 +82,7 @@ class SqlInsertBuilder(
                 val column = Column(
                         name = c.name,
                         size = c.size,
-                        type = ColumnDataType.valueOf(c.type),
+                        type = ColumnDataType.valueOf(c.type.toUpperCase()),
                         primaryKey = c.primaryKey,
                         autoIncrement = c.autoIncrement,
                         foreignKeyToAutoIncrement = c.foreignKeyToAutoIncrement,
@@ -305,7 +305,7 @@ class SqlInsertBuilder(
             val dto = DatabaseCommandDto()
             dto.command = sql
 
-            val result: QueryResultDto = dbExecutor.executeDatabaseCommandAndGetResults(dto)
+            val result: QueryResultDto = dbExecutor.executeDatabaseCommandAndGetQueryResults(dto)
                     ?: continue
 
             result.rows.forEach { r ->
