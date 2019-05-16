@@ -366,7 +366,7 @@ class SqlInsertBuilder(
             val dto = DatabaseCommandDto()
             dto.command = sql
 
-            val result : QueryResultDto = dbExecutor.executeDatabaseCommandAndGetResults(dto)
+            val result : QueryResultDto = dbExecutor.executeDatabaseCommandAndGetQueryResults(dto)
                     ?: throw IllegalArgumentException("rows regarding pks can not be found")
             if(result.rows.size != 1){
                 throw IllegalArgumentException("the size of rows regarding pks is ${result.rows.size}, and except is 1")
@@ -477,7 +477,7 @@ class SqlInsertBuilder(
             val dto = DatabaseCommandDto()
             dto.command = sql
 
-            val result : QueryResultDto = dbExecutor.executeDatabaseCommandAndGetResults(dto)
+            val result : QueryResultDto = dbExecutor.executeDatabaseCommandAndGetQueryResults(dto)
                     ?: continue
             dataInDB.getOrPut(table.name){ result.rows.map { it }.toMutableList()}
         }
