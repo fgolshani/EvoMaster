@@ -11,7 +11,6 @@ import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.GeneUtils
 import org.evomaster.core.search.service.Randomness
 import org.evomaster.core.search.tracer.TrackOperator
-import java.lang.IllegalArgumentException
 
 class ResourceRestIndividual (
         private val resourceRestCalls: MutableList<ResourceRestCalls>,
@@ -149,7 +148,7 @@ class ResourceRestIndividual (
         }
     }
 
-    fun validateSwap(first : Int, second : Int) : Boolean{
+    private fun validateSwap(first : Int, second : Int) : Boolean{
         val position = getResourceCalls()[first].shouldBefore.map { r ->
             getResourceCalls().indexOfFirst { it.resourceInstance.getAResourceKey() == r }
         }

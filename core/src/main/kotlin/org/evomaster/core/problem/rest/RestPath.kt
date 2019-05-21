@@ -289,7 +289,7 @@ class RestPath(path: String) {
         return elements.flatMap { it.tokens.filter { t -> !t.isParameter }.map { t -> t.name } }
     }
 
-    fun getElements() :List<List<String>>{
-        return elements.map { it.tokens.map { t->t.name } }
+    fun getElements() :List<Map<String, Boolean>>{
+        return elements.map { it.tokens.map { t->Pair(t.name, t.isParameter) }.toMap() }
     }
 }

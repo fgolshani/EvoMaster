@@ -457,7 +457,7 @@ class SqlInsertBuilder(
     /**
      * get existing pks in db
      */
-    fun extractExistingPKs(dataInDB : MutableMap<String, MutableList<DataRowDto>>){
+    fun extractExistingPKs(dataInDB : MutableMap<String, MutableList<DataRowDto>>, tablesMap : MutableMap<String, Table>? = null){
 
         if(dbExecutor == null){
             throw IllegalStateException("No Database Executor registered for this object")
@@ -481,6 +481,13 @@ class SqlInsertBuilder(
                     ?: continue
             dataInDB.getOrPut(table.name){ result.rows.map { it }.toMutableList()}
         }
+
+        if(tablesMap!=null){
+            tablesMap.clear()
+            tablesMap.putAll(tables)
+        }
+
+
     }
 
     fun generateSelect(sqlPks : List<SqlPrimaryKeyGene>) : MutableList<DbAction>{

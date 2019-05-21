@@ -17,6 +17,9 @@ class ResourceRestMutator : StandardMutator<ResourceRestIndividual>() {
     private lateinit var rm :ResourceManageService
 
     @Inject
+    private lateinit var dependencyManager: DependencyAndDBManager
+
+    @Inject
     private lateinit var archive: Archive<ResourceRestIndividual>
 
 
@@ -47,7 +50,7 @@ class ResourceRestMutator : StandardMutator<ResourceRestIndividual>() {
         if(mutatedGenes.isEmpty() && (previous.individual.getResourceCalls().size > 1 || mutated.individual.getResourceCalls().size > 1) && config.probOfEnablingResourceDependencyHeuristics > 0){
             val isWorse = previous.fitness.subsumes(mutated.fitness, archive.notCoveredTargets())
             val isBetter = archive.wouldReachNewTarget(mutated) || !isWorse
-            rm.detectDependency(previous, mutated, if(isBetter) 1 else if(isWorse) -1 else 0)
+            dependencyManager.detectDependencyAfterStructureMutation(previous, mutated, if(isBetter) 1 else if(isWorse) -1 else 0)
         }
 
         /*

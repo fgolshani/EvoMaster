@@ -100,7 +100,7 @@ class ResourceRestCalls(
 
 
     enum class ResourceStatus{
-        NOT_EXISTING,
+        NO_RESOURCE,
         EXISTING,
         CREATED,
         NOT_ENOUGH_LENGTH,

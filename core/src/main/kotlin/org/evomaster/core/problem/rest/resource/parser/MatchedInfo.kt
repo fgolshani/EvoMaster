@@ -1,8 +1,9 @@
-package org.evomaster.core.problem.rest.resource.util
+package org.evomaster.core.problem.rest.resource.parser
 
+import org.evomaster.core.problem.rest.resource.parser.ParserUtil
 import kotlin.math.min
 
-class MatchedInfo(val matched : String, var similarity : Double, var inputIndicator : Int = 0, var outputIndicator : Int = 0){
+open class MatchedInfo(val input : String, val targetMatched : String, var similarity : Double, var inputIndicator : Int = 0, var outputIndicator : Int = 0){
 
     fun modifySimilarity(times : Double = 0.9){
         similarity *= times

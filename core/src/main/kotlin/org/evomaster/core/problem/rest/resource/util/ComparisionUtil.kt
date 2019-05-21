@@ -6,6 +6,9 @@ import org.evomaster.core.search.EvaluatedIndividual
 class ComparisionUtil {
     companion object {
 
+        fun compareString(textA : String, textB :String, sensitiveCase : Boolean = false) :Boolean{
+            return if(sensitiveCase) textA == textB else textA.toLowerCase() == textA.toLowerCase()
+        }
 
         fun compare(actionName : String, eviA : EvaluatedIndividual<ResourceRestIndividual>, eviB : EvaluatedIndividual<ResourceRestIndividual>) : Int{
             val actionAs = mutableListOf<Int>()

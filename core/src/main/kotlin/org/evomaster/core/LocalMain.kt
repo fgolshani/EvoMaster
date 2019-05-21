@@ -62,5 +62,5 @@ class LocalMain {
 }
 
 fun main(args : Array<String>){
-    Main.main(LocalMain.getArgs("MIO", "catwatch",10003))
+    Main.main(LocalMain.getArgs("MIO", "proxyprint",10003))
 }

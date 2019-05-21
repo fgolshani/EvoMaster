@@ -240,11 +240,6 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
             return ind
         }
 
-        /*
-            init dependencies after all ad-hoc individual are executed
-         */
-        rm.initDependency()
-
         val restCalls = mutableListOf<ResourceRestCalls>()
 
         val withDependency = config.probOfEnablingResourceDependencyHeuristics > 0.0
@@ -343,7 +338,7 @@ class ResourceRestSampler : Sampler<ResourceRestIndividual>() {
     }
 
     private fun initAbstractResources(){
-        rm.initAbstractResources(actionCluster)
+        rm.initRestResources(actionCluster)
 
         rm.getResourceCluster().keys.forEach { k->
             samplingResourceCounter.getOrPut(k){0}

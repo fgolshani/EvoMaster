@@ -1,12 +1,13 @@
-package org.evomaster.core.problem.rest.resource.util
+package org.evomaster.core.problem.rest.resource.binding
 
 import org.evomaster.core.database.DbAction
 import org.evomaster.core.problem.rest.RestPath
 import org.evomaster.core.problem.rest.param.*
+import org.evomaster.core.problem.rest.resource.parser.MatchedInfo
+import org.evomaster.core.problem.rest.resource.parser.ParserUtil
 import org.evomaster.core.search.gene.*
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import kotlin.IllegalArgumentException
 
 class ParamUtil {
 
@@ -24,7 +25,7 @@ class ParamUtil {
 
         private val log: Logger = LoggerFactory.getLogger(ParamUtil::class.java)
 
-        fun appendParam(paramsText : String, paramToAppend: String) : String = "$paramsText$separator$paramToAppend"
+        fun appendParam(paramsText : String, paramToAppend: String) : String = if(paramsText.isBlank()) paramToAppend else "$paramsText$separator$paramToAppend"
         fun generateParamText(params: List<String>) : String = params.joinToString(separator)
 
         fun parseParams(params : String) : List<String> = params.split(separator)
@@ -36,11 +37,11 @@ class ParamUtil {
          */
         fun bindParam(target : Param, targetPath: RestPath, sourcePath: RestPath, params: List<Param>, inner : Boolean = false){
             when(target){
-                is BodyParam -> bindBodyParam(target, targetPath,sourcePath, params, inner)
-                is PathParam -> bindPathParm(target, targetPath,sourcePath, params, inner)
-                is QueryParam -> bindQueryParm(target, targetPath,sourcePath, params, inner)
-                is FormParam -> bindFormParam(target, targetPath,sourcePath, params)
-                is HeaderParam -> bindHeaderParam(target, targetPath,sourcePath, params)
+                is BodyParam -> bindBodyParam(target, targetPath, sourcePath, params, inner)
+                is PathParam -> bindPathParm(target, targetPath, sourcePath, params, inner)
+                is QueryParam -> bindQueryParm(target, targetPath, sourcePath, params, inner)
+                is FormParam -> bindFormParam(target, targetPath, sourcePath, params)
+                is HeaderParam -> bindHeaderParam(target, targetPath, sourcePath, params)
             }
         }
         private fun bindPathParm(p : PathParam, targetPath: RestPath, sourcePath: RestPath, params: List<Param>, inner : Boolean){
@@ -48,14 +49,14 @@ class ParamUtil {
             if(k != null) p.gene.copyValueFrom(k!!.gene)
             else{
                 if(numOfBodyParam(params) == params.size && params.isNotEmpty()){
-                    bindBodyAndOther(params.first{ pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath,false, inner)
+                    bindBodyAndOther(params.first { pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath, false, inner)
                 }
             }
         }
 
         private fun bindQueryParm(p : QueryParam, targetPath: RestPath, sourcePath: RestPath, params: List<Param>, inner : Boolean){
             if(params.isNotEmpty() && numOfBodyParam(params) == params.size){
-                bindBodyAndOther(params.first{ pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath,false, inner)
+                bindBodyAndOther(params.first { pa -> pa is BodyParam }!! as BodyParam, sourcePath, p, targetPath, false, inner)
             }else{
                 val sg = params.filter { pa -> !(pa is BodyParam) }.find { pa -> pa.name == p.name}
                 if(sg != null){
@@ -155,11 +156,11 @@ class ParamUtil {
          */
         private fun copyWithTypeAdapter(b : Gene, g : Gene) : Boolean{
             return when(b){
-                is DoubleGene -> covertToDouble(b,g)
-                is FloatGene -> covertToFloat(b,g)
-                is IntegerGene -> covertToInteger(b,g)
-                is LongGene -> covertToLong(b,g)
-                is StringGene -> covertToString(b,g)
+                is DoubleGene -> covertToDouble(b, g)
+                is FloatGene -> covertToFloat(b, g)
+                is IntegerGene -> covertToInteger(b, g)
+                is LongGene -> covertToLong(b, g)
+                is StringGene -> covertToString(b, g)
                 is OptionalGene -> copyWithTypeAdapter(getValueGene(b), getValueGene(g))
                 else -> {
                     false
@@ -276,8 +277,8 @@ class ParamUtil {
         }
 
         private fun scoreOfMatch(target : String, source : String, inner : Boolean) : Int{
-            val targets = target.split(separator).filter { it != DISRUPTIVE_NAME  }.toMutableList()
-            val sources = source.split(separator).filter { it != DISRUPTIVE_NAME  }.toMutableList()
+            val targets = target.split(separator).filter { it != DISRUPTIVE_NAME }.toMutableList()
+            val sources = source.split(separator).filter { it != DISRUPTIVE_NAME }.toMutableList()
             if(inner){
                 if(sources.toHashSet().map { s -> if(target.toLowerCase().contains(s.toLowerCase()))1 else 0}.sum() == sources.toHashSet().size)
                     return 0
@@ -286,7 +287,7 @@ class ParamUtil {
                 if(targets.containsAll(sources)) return 0
             }
             if(sources.contains(BODYGENE_NAME)){
-                val sources_rbody = sources.filter { it != BODYGENE_NAME  }.toMutableList()
+                val sources_rbody = sources.filter { it != BODYGENE_NAME }.toMutableList()
                 if(sources_rbody.toHashSet().map { s -> if(target.toLowerCase().contains(s.toLowerCase()))1 else 0}.sum() == sources_rbody.toHashSet().size)
                     return 0
             }
@@ -317,6 +318,85 @@ class ParamUtil {
             return maps
         }
 
+        private val GENETYPE_BINDING_PRIORITY = mapOf<Int, Set<String>>(
+                (0 to setOf(SqlPrimaryKeyGene::class.java.simpleName, SqlAutoIncrementGene::class.java.simpleName, SqlForeignKeyGene::class.java.simpleName, ImmutableDataHolderGene::class.java.simpleName)),
+                (1 to setOf(DateTimeGene::class.java.simpleName, DateGene::class.java.simpleName, TimeGene::class.java.simpleName)),
+                (2 to setOf(Boolean::class.java.simpleName)),
+                (3 to setOf(IntegerGene::class.java.simpleName)),
+                (4 to setOf(LongGene::class.java.simpleName)),
+                (5 to setOf(FloatGene::class.java.simpleName)),
+                (6 to setOf(DoubleGene::class.java.simpleName)),
+                (7 to setOf(ArrayGene::class.java.simpleName, ObjectGene::class.java.simpleName, EnumGene::class.java.simpleName, CycleObjectGene::class.java.simpleName, MapGene::class.java.simpleName)),
+                (8 to setOf(StringGene::class.java.simpleName, Base64StringGene::class.java.simpleName))
+        )
+
+        private fun getGeneTypePriority(gene: Gene) : Int{
+            val typeName = gene::class.java.simpleName
+            GENETYPE_BINDING_PRIORITY.filter { it.value.contains(typeName) }.let {
+                return if(it.isEmpty()) -1 else it.keys.first()
+            }
+        }
+        /**
+         * @return if(Pair.first != null && Pair.first) pair.second.first copy values based on pair.second.second, e.g., StringGene should modify value based on IntegerGene
+         */
+        private fun suggestBindSequence(geneA: Gene, geneB: Gene) : Pair<Boolean?, Pair<Gene, Gene>>{
+            val pA = getGeneTypePriority(geneA)
+            val pB = getGeneTypePriority(geneB)
+
+            return Pair(
+                    if(pA != -1 && pB!= -1)(pA != pB) else null,
+                    if(pA > pB) Pair(geneA, geneB) else Pair(geneB, geneA)
+            )
+
+        }
+
+        /**
+         * [geneA] copy values from [geneB]
+         * @return null cannot find its priority
+         *         true keep current sequence
+         *         false change current sequence
+         */
+        private fun checkBindSequence(geneA: Gene, geneB: Gene) : Boolean?{
+            val pA = getGeneTypePriority(geneA)
+            val pB = getGeneTypePriority(geneB)
+
+            if(pA == -1 || pB == -1) return null
+
+            if(pA >= pB) return true
+
+            return false
+        }
+
+        /**
+         * @param existingData whether the data represents existing data
+         * @param enableFlexibleBind whether to enable flexible bind, which can only be enabled when [existingData] is false
+         */
+        fun bindParamWithDbAction(dbgene: Gene, paramGene: Gene, existingData: Boolean, enableFlexibleBind : Boolean = true){
+            if(dbgene!! is SqlPrimaryKeyGene || dbgene!! is SqlForeignKeyGene || dbgene!! is SqlAutoIncrementGene){
+                /*
+                    if gene of dbaction is PK, FK or AutoIncrementGene,
+                        bind gene of Param according to the gene from dbaction
+                 */
+                copyGene(b=getValueGene(dbgene!!), g=getValueGene(paramGene), b2g=false)
+            }else{
+                val db2Action = !existingData && (!enableFlexibleBind || checkBindSequence(getValueGene(dbgene), getValueGene(paramGene))?:true)
+                copyGene(b=getValueGene(dbgene!!), g=getValueGene(paramGene), b2g=db2Action)
+//                if(existingData){
+//                    /*
+//                     If the data is existing in db, bind gene of Param according to the gene from dbaction
+//                        otherwise, bind gene of action according to rest action, i.e., Gene of Param
+//                    */
+//                    copyGene(b=getValueGene(dbgene!!), g=getValueGene(paramGene), b2g=!existingData)
+//                }else{
+//                    if (enableFlexibleBind){
+//
+//                    }
+//                }
+
+            }
+
+        }
+
         fun bindParam(dbAction: DbAction, param : Param, previousToken: String, existingData : Boolean) : Boolean{
             var gene  : Gene? = null
             var similarity = 0.0
@@ -334,13 +414,13 @@ class ParamUtil {
                         if gene of dbaction is PK, FK or AutoIncrementGene,
                             bind gene of Param according to the gene from dbaction
                      */
-                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), false)
+                    copyGene(getValueGene(gene!!), getValueGene(param.gene), false)
                 }else{
                     /*
                         If the data is existing in db, bind gene of Param according to the gene from dbaction
                         otherwise, bind gene of action according to rest action, i.e., Gene of Param
                      */
-                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), !existingData)
+                    copyGene(getValueGene(gene!!), getValueGene(param.gene), !existingData)
                 }
 
             }else
@@ -350,13 +430,13 @@ class ParamUtil {
 
         fun bindParam(dbAction: DbAction, param : Param, matchedInfo: MatchedInfo, existingData : Boolean) : Boolean{
 
-            val gene = if(matchedInfo.matched.toLowerCase() == dbAction.table.name.toLowerCase()){
+            val gene = if(matchedInfo.targetMatched.toLowerCase() == dbAction.table.name.toLowerCase()){
                 dbAction.seeGenes().find { it is SqlPrimaryKeyGene }.run {
                     if(this == null)  dbAction.seeGenes().find { containGeneralName(it.name) }
                     else this
                 }
             }else{
-                dbAction.seeGenes().find { it.name.toLowerCase() == matchedInfo.matched.toLowerCase() }
+                dbAction.seeGenes().find { it.name.toLowerCase() == matchedInfo.targetMatched.toLowerCase() }
             }
 
             if(gene != null){
@@ -365,13 +445,13 @@ class ParamUtil {
                         if gene of dbaction is PK, FK or AutoIncrementGene,
                             bind gene of Param according to the gene from dbaction
                      */
-                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), false)
+                    copyGene(getValueGene(gene!!), getValueGene(param.gene), false)
                 }else{
                     /*
                         If the data is existing in db, bind gene of Param according to the gene from dbaction
                         otherwise, bind gene of action according to rest action, i.e., Gene of Param
                      */
-                    copyGene(getValueGene(gene!!),  getValueGene(param.gene), !existingData)
+                    copyGene(getValueGene(gene!!), getValueGene(param.gene), !existingData)
                 }
 
                 return true
@@ -399,10 +479,10 @@ class ParamUtil {
         }
 
         fun isGeneralName(text : String) : Boolean{
-            return GENERAL_NAMES.contains(text.toLowerCase())
+            return GENERAL_NAMES.any{ text.toLowerCase() == it}
         }
 
-        private fun containGeneralName(text : String) : Boolean = GENERAL_NAMES.any { text.toLowerCase().contains(it) }
+        fun containGeneralName(text : String) : Boolean = GENERAL_NAMES.any { text.toLowerCase().contains(it) } && !isGeneralName(text)
 
         private fun genGeneNameInPath(names : MutableList<String>, tokensInPath : List<String>?) : String{
             tokensInPath?.let {

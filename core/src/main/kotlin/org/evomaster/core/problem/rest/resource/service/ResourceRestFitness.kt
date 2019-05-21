@@ -30,6 +30,9 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
     @Inject
     private lateinit var rm: ResourceManageService
 
+    @Inject
+    private lateinit var depAndDBManager: DependencyAndDBManager
+
     companion object {
         private val log: Logger = LoggerFactory.getLogger(ResourceRestFitness::class.java)
     }
@@ -47,17 +50,15 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
 
         //used for things like chaining "location" paths
         val chainState = mutableMapOf<String, String>()
+        val previousDbAction = mutableListOf<DbAction>()
 
         //run the test, one action at a time
         var indexOfAction = 0
 
-        if(individual.sampleType == SampleType.SMART_RESOURCE_WITH_DEP)
-            doInitializingCalls(individual.getResourceCalls().flatMap { it.dbActions })
-
         for (call in individual.getResourceCalls()) {
 
-            if(individual.sampleType == SampleType.SMART_RESOURCE_WITHOUT_DEP)
-                doInitializingCalls(call.dbActions)
+            doInitializingCalls(call.dbActions, previousDbAction)
+            previousDbAction.addAll(call.dbActions)
 
             var terminated = false
 
@@ -97,7 +98,7 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
             return null
         }
 
-        rm.updateResourceTables(individual, dto)
+        depAndDBManager.updateResourceTables(individual, dto)
 
         dto.targets.forEach { t ->
 
@@ -124,7 +125,7 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
          */
     }
 
-    private fun doInitializingCalls(allDbActions : List<DbAction>) {
+    private fun doInitializingCalls(allDbActions : List<DbAction>, previousDbAction : MutableList<DbAction>) {
 
         if (allDbActions.isEmpty()) {
             return
@@ -140,7 +141,7 @@ class ResourceRestFitness : AbstractRestFitness<ResourceRestIndividual>() {
             return
         }
 
-        val dto = DbActionTransformer.transform(allDbActions)
+        val dto = DbActionTransformer.transform(allDbActions, previousDbAction)
 
         val ok = rc.executeDatabaseCommand(dto)
         if (!ok) {

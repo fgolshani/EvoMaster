@@ -65,7 +65,7 @@ class SmartSamplingController {
             #hasIndActionRs ${mutableMap.values.filter { it.hasIndependentAction() }.size}
             #DepRs ${mutableMap.values.filterNot { it.isIndependent() }.size}
 
-            #Actions ${mutableMap.values.map { it.actions.size }.sum()}
+            #Actions ${mutableMap.values.map { it.getMethods().size }.sum()}
             #IndActions ${mutableMap.values.map { it.templates.filter { t -> t.value.independent }.size }.sum()}
             #depActions ${mutableMap.values.map { it.templates.filter { t -> !t.value.independent }.size}.sum()}
             #depComActions ${mutableMap.values.map { it.templates.filter { t -> !t.value.independent }.size * (it.templates.filter { !it.value.independent }.size -1) }.sum()}

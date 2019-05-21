@@ -13,11 +13,9 @@ import org.evomaster.core.logging.LoggingUtil
 import org.evomaster.core.output.service.TestSuiteWriter
 import org.evomaster.core.problem.rest.RestIndividual
 import org.evomaster.core.problem.rest.resource.ResourceRestIndividual
-import org.evomaster.core.problem.rest.resource.RestModuleII
+import org.evomaster.core.problem.rest.resource.RestResourceModule
 import org.evomaster.core.problem.rest.service.RestModule
 import org.evomaster.core.problem.web.service.WebModule
-import org.evomaster.core.remote.NoRemoteConnectionException
-import org.evomaster.core.remote.SutProblemException
 import org.evomaster.core.remote.service.RemoteController
 import org.evomaster.core.search.Solution
 import org.evomaster.core.search.algorithms.MioAlgorithm
@@ -169,7 +167,7 @@ class Main {
             val problemType = base.getEMConfig().problemType
 
             val problemModule = when (problemType) {
-                EMConfig.ProblemType.REST -> if(base.getEMConfig().resourceSampleStrategy != EMConfig.ResourceSamplingStrategy.NONE) RestModuleII() else RestModule()
+                EMConfig.ProblemType.REST -> if(base.getEMConfig().resourceSampleStrategy != EMConfig.ResourceSamplingStrategy.NONE) RestResourceModule() else RestModule()
                 EMConfig.ProblemType.WEB -> WebModule()
                 //this should never happen, unless we add new type and forget to add it here
                 else -> throw IllegalStateException("Unrecognized problem type: $problemType")

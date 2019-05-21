@@ -10,10 +10,10 @@ import org.evomaster.core.search.gene.SqlPrimaryKeyGene
 
 object DbActionTransformer {
 
-    fun transform(insertions: List<DbAction>) : DatabaseCommandDto {
+    fun transform(insertions: List<DbAction>, previousDbAction: MutableList<DbAction> = mutableListOf()) : DatabaseCommandDto {
 
         val list = mutableListOf<InsertionDto>()
-        val previous = mutableListOf<Gene>()
+        val previous = previousDbAction.flatMap{ it.seeGenes() }.toMutableList()//mutableListOf<Gene>()
 
         for (i in 0 until insertions.size) {
 

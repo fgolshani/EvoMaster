@@ -11,7 +11,7 @@ import org.evomaster.core.search.service.mutator.Mutator
 import org.evomaster.core.search.service.mutator.StructureMutator
 
 
-class RestModuleII : AbstractModule(){
+class RestResourceModule : AbstractModule(){
 
     override fun configure() {
         bind(object : TypeLiteral<Sampler<ResourceRestIndividual>>() {})
@@ -58,6 +58,9 @@ class RestModuleII : AbstractModule(){
                 .asEagerSingleton()
 
         bind(ResourceManageService::class.java)
+                .asEagerSingleton()
+
+        bind(DependencyAndDBManager::class.java)
                 .asEagerSingleton()
 
     }

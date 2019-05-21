@@ -1,4 +1,4 @@
-package org.evomaster.core.problem.rest.resource.util
+package org.evomaster.core.problem.rest.resource.parser
 
 
 import io.swagger.models.Swagger
@@ -15,6 +15,7 @@ import org.evomaster.core.problem.rest.param.*
 import org.evomaster.core.problem.rest.resource.model.ActionRToken
 import org.evomaster.core.problem.rest.resource.model.PathRToken
 import org.evomaster.core.problem.rest.resource.model.RToken
+import org.evomaster.core.problem.rest.resource.binding.ParamUtil
 import org.evomaster.core.search.gene.DisruptiveGene
 import org.evomaster.core.search.gene.Gene
 import org.evomaster.core.search.gene.ObjectGene
@@ -46,29 +47,35 @@ class ParserUtil {
 
         private fun formatKey(source : String) : String = source.toLowerCase()
 
-        fun parsePathTokens(path: RestPath, map : MutableMap<String, PathRToken>){
+        fun parsePathTokens(path: RestPath, list : MutableList<PathRToken>){
             val tokens = getNlpTokens(convertPathText(path.toString()))
+            var text = ""
 
             path.getElements().forEachIndexed {level, ts ->
-                ts.forEach {  t ->
-                    if(path.getVariableNames().contains(t)){
+                ts.forEach { t, u ->
+                    if(u){
                         val token = tokens.find { it.originalText() == t }!!
-                        map.putIfAbsent(formatKey(token.originalText()), PathRToken(token.originalText(), token.lemma(), level, true, isVerbByTag(token.tag()!!)))
+                        list.add(PathRToken(token.originalText(), token.lemma(), level, true, isVerbByTag(token.tag()!!), text))
                     }else{
+                        text = ParamUtil.appendParam(text, t)
+
                         val token = tokens.find { it.originalText() == t }
                         if(token == null){
+                            val pathT = PathRToken(t, t, level, false, segment =  text)
+                            list.add(pathT)
+
                             tokens
                                     .filter { t.contains(it.originalText()) }
                                     .forEach { t->
-                                        map.putIfAbsent(formatKey(t.originalText()), PathRToken(t.originalText(), t.lemma(), level, false, isVerbByTag(t.tag()!!)))
+                                        pathT.subTokens.add(RToken(t.originalText(), t.lemma(), isVerbByTag(t.tag()!!)))
                                     }
 
                         }else{
-                            map.putIfAbsent(formatKey(token.originalText()), PathRToken(token.originalText(), token.lemma(), level, false, isVerbByTag(token.tag()!!)))
-
-                        }
+                            list.add(PathRToken(token.originalText(), token.lemma(), level, false, isVerbByTag(token.tag()!!), text))
+                       }
                     }
                 }
+                if(ts.any { it.value }) text = ""
             }
         }
 
@@ -204,7 +211,7 @@ class ParserUtil {
             if(sentences.size > 0)
                 return sentences.flatMap { it.get(CoreAnnotations.TokensAnnotation::class.java) }
             else
-                throw java.lang.IllegalArgumentException("Input text is not single sentence. The text is $text")
+                throw IllegalArgumentException("Input text is not single sentence. The text is $text")
         }
 
         private fun getNounTokens(text : String) : List<CoreLabel>{
@@ -234,12 +241,14 @@ class ParserUtil {
             return SwaggerParser().read(resourcePath)
         }
 
-        fun stringSimilarityScore(str1 : String, str2 : String, algorithm : SimilarityAlgorithm =SimilarityAlgorithm.Trigrams): Double{
+        fun stringSimilarityScore(str1 : String, str2 : String, algorithm : SimilarityAlgorithm = SimilarityAlgorithm.Trigrams): Double{
             return when(algorithm){
                 SimilarityAlgorithm.Trigrams -> trigrams(bigram(str1.toLowerCase()), bigram(str2.toLowerCase()))
                 else-> 0.0
             }
         }
+
+        fun stringSimilarityBetterThreshold(str1: String, str2: String) : Boolean = (stringSimilarityScore(str1, str2) >= SimilarityThreshold)
 
         private fun trigrams(bigram1: MutableList<CharArray>, bigram2 : MutableList<CharArray>) : Double{
             val copy = ArrayList<CharArray>(bigram2)

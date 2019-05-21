@@ -1,7 +1,7 @@
 package org.evomaster.core.problem.rest.resource.model
 
 open class RToken{
-    protected val originalText : String
+    val originalText : String
     protected val lemma : String
     var assuredVerb : Boolean = false
     var isCollection: Boolean = false
@@ -16,6 +16,10 @@ open class RToken{
 
     fun equals(other : RToken):Boolean{
         return isCollection == other.isCollection && lemma == other.lemma
+    }
+
+    fun equals(text: String) : Boolean{
+        return text.toLowerCase() == lemma.toLowerCase() || text.toLowerCase() == originalText.toLowerCase()
     }
 
     fun getKey() : String{
@@ -33,11 +37,16 @@ class PathRToken(
         lemma : String,
         val level : Int,
         val isParameter : Boolean,
-        assuredVerb : Boolean = false
+        assuredVerb : Boolean = false,
+        var segment : String = ""
 ) : RToken(originalText,lemma, assuredVerb){
 
+    val subTokens = mutableListOf<RToken>()
+
     override fun copy() : RToken{
-        return PathRToken(originalText,lemma, level, isParameter, assuredVerb)
+        val copy = PathRToken(originalText,lemma, level, isParameter, assuredVerb)
+        copy.subTokens.addAll(subTokens.map { it.copy() })
+        return copy
     }
 
 }

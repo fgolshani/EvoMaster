@@ -4,19 +4,21 @@ import org.evomaster.client.java.controller.api.dto.database.execution.Execution
 import org.evomaster.core.problem.rest.*
 import org.evomaster.core.problem.rest.param.BodyParam
 import org.evomaster.core.problem.rest.param.Param
-import org.evomaster.core.problem.rest.resource.db.SQLKey
-import org.evomaster.core.problem.rest.resource.model.dependency.ActionRelatedToTable
+import org.evomaster.core.problem.rest.param.PathParam
+import org.evomaster.core.problem.rest.param.QueryParam
+import org.evomaster.core.problem.rest.resource.binding.ParamUtil
+import org.evomaster.core.problem.rest.resource.util.ResourceTemplateUtil
 import org.evomaster.core.problem.rest.resource.model.dependency.CreationChain
-import org.evomaster.core.problem.rest.resource.model.dependency.ParamRelatedToTable
-import org.evomaster.core.problem.rest.resource.util.MatchedInfo
-import org.evomaster.core.problem.rest.resource.util.ParamUtil
-import org.evomaster.core.problem.rest.resource.util.ParserUtil
-import org.evomaster.core.problem.rest.resource.util.RTemplateHandler
+import org.evomaster.core.problem.rest.resource.model.dependency.ResourceRelatedToTable
+import org.evomaster.core.problem.rest.resource.parser.ParserUtil
+import org.evomaster.core.problem.rest.resource.util.*
 import org.evomaster.core.search.Action
+import org.evomaster.core.search.gene.ObjectGene
+import org.evomaster.core.search.gene.OptionalGene
 import org.evomaster.core.search.service.Randomness
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import kotlin.math.max
+
 
 /**
  * @property path resource path
@@ -24,7 +26,7 @@ import kotlin.math.max
  */
 class RestResource(
         val path : RestPath,
-        val actions: MutableList<RestAction>
+        private val actions: MutableMap<RestAction, Boolean>
 ) {
 
     companion object {
@@ -32,6 +34,7 @@ class RestResource(
          * control a probability to add extra patch
          */
         private const val PROB_EXTRA_PATCH = 0.8
+        const val ALL_SYMBOL = "*"
         val log: Logger = LoggerFactory.getLogger(RestResource::class.java)
     }
 
@@ -45,28 +48,17 @@ class RestResource(
      */
     var postCreation : CreationChain = CreationChain(mutableListOf(), false)
 
-    /**
-     * derived relationship between param of actions and tables
-     *
-     * key is param
-     * value is related tables
-     */
-    val paramsToTables : MutableMap<String, ParamRelatedToTable> = mutableMapOf()
-
+    val resourceToTable : ResourceRelatedToTable = ResourceRelatedToTable(path.toString())
 
     /**
-     * key is verb of the action
-     * value is related table with its fields
-     *
-     * Note that same action may execute different SQL commends due to e.g., cookies or different values
-     * When updating [actionToTables], we check if existing [ActionRelatedToTable] subsumes [ExecutionDto] or [ExecutionDto] subsume [ActionRelatedToTable] regarding involved tables.
-     * if subsumed, we update existing [ActionRelatedToTable]; else create [ActionRelatedToTable]
+     * key is id of param which is [getLastTokensOfPath] + [Param.name]
+     * value is detailed info [ParamInfo] including
+     *          e.g., whether the param is required to be bound with existing resource (i.e., POST action or table),
      */
-    val actionToTables : MutableMap<String, MutableList<ActionRelatedToTable>> = mutableMapOf()
+    val paramsInfo : MutableMap<String, ParamInfo> = mutableMapOf()
 
-    val tokens : MutableMap<String, PathRToken> = mutableMapOf()
+    private val tokens : MutableList<PathRToken> = mutableListOf()
 
-    val tokenToTable : MutableMap<String, Set<String>> = mutableMapOf()
 
     /**
      * HTTP methods under the resource, including possible POST in its ancestors'
@@ -74,7 +66,7 @@ class RestResource(
      * second last means if there are post actions in its ancestors'
      * last means if there are db actions
      */
-    private val verbs : Array<Boolean> = Array(RTemplateHandler.arrayHttpVerbs.size + 1){false}
+    private val verbs : Array<Boolean> = Array(ResourceTemplateUtil.arrayHttpVerbs.size + 1){false}
 
     /**
      * possible templates
@@ -90,15 +82,17 @@ class RestResource(
     /**
      * [init] requires ancestors info
      */
-    fun init(){
+    fun init(withTokens : Boolean){
         initVerbs()
         initCreationPoints()
         updateTemplateSize()
+        if(withTokens) initTokens()
+        initParamInfo()
     }
 
     private fun initCreationPoints(){
 
-        val posts = actions.filter { it is RestCallAction && it.verb == HttpVerb.POST}
+        val posts = getMethods().filter { it is RestCallAction && it.verb == HttpVerb.POST}
         val post = if(posts.isEmpty()){
             chooseClosestAncestor(path, listOf(HttpVerb.POST))
         }else if(posts.size == 1){
@@ -122,33 +116,10 @@ class RestResource(
 
     }
 
-    fun initTokens(tables : Set<String>){
+    private fun initTokens(){
         if(path.getStaticTokens().isNotEmpty()){
             tokens.clear()
             ParserUtil.parsePathTokens(this.path, tokens)
-            tokens.values.forEach { p ->
-                tables.filter { ParserUtil.stringSimilarityScore(it.toLowerCase(), p.getKey()) >= ParserUtil.SimilarityThreshold }.let {
-                    if(it.isNotEmpty())
-                        tokenToTable.put(p.getKey(), it.toSet())
-                }
-            }
-        }
-    }
-
-    fun updateParamTable(paramName : String, map: MutableMap<String, MutableList<MatchedInfo>>, tokens : String){
-        val key = ParamRelatedToTable.getNotateKey(paramName)
-        paramsToTables[key].let { pToTable ->
-            if (pToTable == null){
-                val p = ParamRelatedToTable(key, map.keys.toMutableList(), map.values.flatMap { it.map { it.similarity }  }.max()!!, tokens)
-                p.derivedMap.putAll(map)
-                paramsToTables.put(key, p)
-            }else{
-                pToTable.additionalInfo = ParamUtil.appendParam(pToTable.additionalInfo, tokens)
-                map.filter { !pToTable.targets.contains(it) }.forEach { t, u ->
-                    (pToTable.targets as MutableList<String>).add(t)
-                    pToTable.derivedMap.put(t, u)
-                }
-            }
         }
     }
 
@@ -168,128 +139,39 @@ class RestResource(
     }
 
     private fun initVerbs(){
-        actions.forEach { a->
+        getMethods().forEach { a->
             when((a as RestCallAction).verb){
-                HttpVerb.POST -> verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.POST)] = true
-                HttpVerb.GET -> verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.GET)] = true
-                HttpVerb.PUT -> verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.PUT)] = true
-                HttpVerb.PATCH -> verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.PATCH)] = true
-                HttpVerb.DELETE ->verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.DELETE)] = true
-                HttpVerb.OPTIONS ->verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.OPTIONS)] = true
-                HttpVerb.HEAD -> verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.HEAD)] = true
+                HttpVerb.POST -> verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.POST)] = true
+                HttpVerb.GET -> verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.GET)] = true
+                HttpVerb.PUT -> verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.PUT)] = true
+                HttpVerb.PATCH -> verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.PATCH)] = true
+                HttpVerb.DELETE ->verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.DELETE)] = true
+                HttpVerb.OPTIONS ->verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.OPTIONS)] = true
+                HttpVerb.HEAD -> verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.HEAD)] = true
             }
         }
         verbs[verbs.size - 1] = verbs[0]
         if (!verbs[0]){
             verbs[0] = if(ancestors.isEmpty()) false
-            else ancestors.filter{ p -> p.actions.filter { a -> (a as RestCallAction).verb == HttpVerb.POST }.isNotEmpty() }.isNotEmpty()
+            else ancestors.filter{ p -> p.getMethods().filter { a -> (a as RestCallAction).verb == HttpVerb.POST }.isNotEmpty() }.isNotEmpty()
         }
 
-        RTemplateHandler.initSampleSpaceOnlyPOST(verbs, templates)
+        ResourceTemplateUtil.initSampleSpaceOnlyPOST(verbs, templates)
 
         assert(templates.isNotEmpty())
 
     }
 
-    fun updateActionRelatedToTable(verb : String, dto: ExecutionDto, existingTables : Set<String>) : Boolean{
-        val tables = mutableListOf<String>().plus(dto.deletedData).plus(dto.updatedData.keys).plus(dto.insertedData.keys).plus(dto.queriedData.keys)
-                .filter { existingTables.contains(it) || existingTables.any { e->e.toLowerCase() == it.toLowerCase() }}.toHashSet()
 
-        if (tables.isEmpty()) return false
-
-        var access = actionToTables
-                .getOrPut(verb){ mutableListOf()}
-                .find { it.doesSubsume(tables, true) || it.doesSubsume(tables, false)}
-
-        val doesUpdateParamTable = (access == null)
-
-        if(access== null){
-            access = ActionRelatedToTable(verb)
-            actionToTables[verb]!!.add(access)
-        }
-
-        access.updateTableWithFields(dto.deletedData.map { Pair(it, mutableSetOf<String>()) }.toMap(), SQLKey.DELETE)
-        access.updateTableWithFields(dto.insertedData, SQLKey.INSERT)
-        access.updateTableWithFields(dto.queriedData, SQLKey.SELECT)
-        access.updateTableWithFields(dto.updatedData, SQLKey.UPDATE)
-
-        return doesUpdateParamTable || actionToTables.size < actions.filter { it is RestCallAction }.size
+    fun updateActionToTables(verb : String, dto: ExecutionDto, existingTables : Set<String>) : Boolean{
+        return resourceToTable.updateActionRelatedToTable(verb, dto, existingTables) || resourceToTable.actionToTables.size < getMethods().filter { it is RestCallAction }.size
     }
 
-//    private fun updateParamToTable(){
-//        actions.forEach {action->
-//            if(action is RestCallAction){
-//                action.parameters.forEach { param ->
-//                    val tables = actionToTables[action.verb.toString()]
-//                    if(tables != null && tables.isNotEmpty()){
-//
-//                        val tableScore = mutableMapOf<String, Double>()
-//
-//                        tables.forEach { rt->
-//                            //TODO handle the situation whereby field is *
-//                            rt.tableWithFields.forEach { tab, fields ->
-//                                val score = ParserUtil.stringSimilarityScore(param.name, tab)
-//                                val current = tableScore.getOrPut(tab){0.0}
-//                                if(score > current){
-//                                    tableScore.replace(tab, score)
-//                                }
-//
-//                                fields.forEach { f ->
-//                                    f.field.forEach { ff ->
-//                                        val scoref = ParserUtil.stringSimilarityScore(param.name, ff)
-//                                        val currentf = tableScore.getOrPut(tab){0.0}
-//                                        if(scoref > currentf){
-//                                            tableScore.replace(tab, scoref)
-//                                        }
-//                                    }
-//                                }
-//                            }
-//                        }
-//
-//
-//                        if(tableScore.isNotEmpty()){
-//                            val best = tableScore.values.max()!!
-//                            if(best > ParserUtil.SimilarityThreshold){
-//                                val tables = tableScore.filter { it.value == best }
-//                                var ptoTable = paramsToTables.get(ParamRelatedToTable.getNotateKey(param.name))
-//                                if(ptoTable == null){
-//                                    ptoTable = ParamRelatedToTable(param.name, tables.keys.toMutableList(), best)
-//                                    paramsToTables.put(ptoTable.notateKey(), ptoTable)
-//
-//                                }else{
-//                                    if(!ptoTable.targets.containsAll(tables.keys)){
-//                                        tables.keys.filter { !ptoTable.targets.contains(it) }.forEach { n->
-//                                            (ptoTable.targets as MutableList<String>).add(n)
-//                                        }
-//                                    }
-//                                    if(best > ptoTable.probability)
-//                                        ptoTable.probability = best
-//                                }
-//
-//                                tables.forEach { t, u ->
-//                                    if(ptoTable.confirmedMap.containsKey(t))
-//                                        ptoTable.confirmedMap.replace(t, max(u, ptoTable.confirmedMap[t]!!))
-//                                    else
-//                                        ptoTable.confirmedMap.put(t, u)
-//                                }
-//                            }
-//                        }
-//
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-    fun getConfirmedRelatedTables() : Set<String> = actionToTables.values.flatMap { it.flatMap { a -> a.tableWithFields.keys } }.toSet()
-
-    fun getConfirmedRelatedTables(action: RestCallAction) : Set<String>? = actionToTables[action.verb.toString()]?.flatMap{ a -> a.tableWithFields.keys  }?.toSet()
-
-    fun getDerivedRelatedTables() : Set<String> = tokenToTable.flatMap { it.value }.plus(paramsToTables.values.flatMap { it.targets as MutableList<String> }.toHashSet()).toSet()
+    fun getDerivedTables() : Set<String> = resourceToTable.derivedMap.flatMap { it.value.map { m->m.targetMatched } }.toHashSet()
 
     //if only get
     fun isIndependent() : Boolean{
-        return paramsToTables.isEmpty() && verbs[RTemplateHandler.arrayHttpVerbs.indexOf(HttpVerb.GET)] && verbs.filter {it}.size == 1
+        return verbs[ResourceTemplateUtil.arrayHttpVerbs.indexOf(HttpVerb.GET)] && verbs.filter {it}.size == 1
     }
 
     // if only post, the resource does not contain any independent action
@@ -306,7 +188,7 @@ class RestResource(
         }
     }
     fun generateAnother(restCalls : ResourceRestCalls, randomness: Randomness, maxTestSize: Int) : ResourceRestCalls?{
-        val current = restCalls.actions.map { (it as RestCallAction).verb }.joinToString(RTemplateHandler.SeparatorTemplate)
+        val current = restCalls.actions.map { (it as RestCallAction).verb }.joinToString(ResourceTemplateUtil.SeparatorTemplate)
         val rest = templates.filterNot { it.key == current }
         if(rest.isEmpty()) return null
         val selected = randomness.choose(rest.keys)
@@ -359,7 +241,7 @@ class RestResource(
 
 
     fun sampleOneAction(verb : HttpVerb? = null, randomness: Randomness, maxTestSize: Int) : ResourceRestCalls{
-        val al = if(verb != null) getActionByHttpVerb(actions, verb) else randomness.choose(actions).copy() as RestAction
+        val al = if(verb != null) getActionByHttpVerb(getMethods(), verb) else randomness.choose(getMethods()).copy() as RestAction
         return sampleOneAction(al!!, randomness, maxTestSize)
     }
 
@@ -376,7 +258,7 @@ class RestResource(
             }else
                 call.status = ResourceRestCalls.ResourceStatus.CREATED
         }else
-            call.status = ResourceRestCalls.ResourceStatus.NOT_EXISTING
+            call.status = ResourceRestCalls.ResourceStatus.NO_RESOURCE
 
         return call
     }
@@ -412,7 +294,7 @@ class RestResource(
             additionalPatch : Boolean = true) : ResourceRestCalls{
         if(!templates.containsKey(template))
             throw java.lang.IllegalArgumentException("$template does not exist in ${path.toString()}")
-        val ats = RTemplateHandler.parseTemplate(template)
+        val ats = ResourceTemplateUtil.parseTemplate(template)
         val result : MutableList<RestAction> = mutableListOf()
         var resourceInstance : RestResourceInstance? = null
 
@@ -421,7 +303,7 @@ class RestResource(
         var isCreated = 1
         if(createResource && ats[0] == HttpVerb.POST){
             val nonPostIndex = ats.indexOfFirst { it != HttpVerb.POST }
-            val ac = getActionByHttpVerb(actions, if(nonPostIndex==-1) HttpVerb.POST else ats[nonPostIndex])!!.copy() as RestCallAction
+            val ac = getActionByHttpVerb(getMethods(), if(nonPostIndex==-1) HttpVerb.POST else ats[nonPostIndex])!!.copy() as RestCallAction
             randomizeActionGenes(ac, randomness)
             result.add(ac)
             isCreated = createResourcesFor(ac, result, maxTestSize , randomness, checkSize)
@@ -440,7 +322,7 @@ class RestResource(
             }else{
                 if(nonPostIndex != ats.size -1){
                     (nonPostIndex + 1 until ats.size).forEach {
-                        val ac = getActionByHttpVerb(actions, ats[it])!!.copy() as RestCallAction
+                        val ac = getActionByHttpVerb(getMethods(), ats[it])!!.copy() as RestCallAction
                         randomizeActionGenes(ac, randomness)
                         result.add(ac)
                     }
@@ -449,7 +331,7 @@ class RestResource(
 
         }else{
             ats.forEach {at->
-                val ac = getActionByHttpVerb(actions, at)!!.copy() as RestCallAction
+                val ac = getActionByHttpVerb(getMethods(), at)!!.copy() as RestCallAction
                 randomizeActionGenes(ac, randomness)
                 result.add(ac)
             }
@@ -480,7 +362,7 @@ class RestResource(
 
         when(isCreated){
             1 ->{
-                calls.status = ResourceRestCalls.ResourceStatus.NOT_EXISTING
+                calls.status = ResourceRestCalls.ResourceStatus.NO_RESOURCE
             }
             0 ->{
                 calls.status = ResourceRestCalls.ResourceStatus.CREATED
@@ -545,24 +427,24 @@ class RestResource(
             ancestors.find { it.path.toString() == path.toString() }
         }
         ar?.let{
-            val others = hasWithVerbs(it.ancestors.flatMap { it.actions }.filter { it is RestCallAction } as List<RestCallAction>, verbs)
+            val others = hasWithVerbs(it.ancestors.flatMap { it.getMethods() }.filter { it is RestCallAction } as List<RestCallAction>, verbs)
             if(others.isEmpty()) return null
             return chooseLongestPath(others)
         }
         return null
     }
 
-    private fun hasWithVerbs(actions: List<RestCallAction>, verbs: List<HttpVerb>): List<RestCallAction> {
-        return actions.filter { a ->
+    private fun hasWithVerbs(actionSeq: List<RestCallAction>, verbs: List<HttpVerb>): List<RestCallAction> {
+        return actionSeq.filter { a ->
             verbs.contains(a.verb)
         }
     }
 
     private fun sameOrAncestorEndpoints(target: RestCallAction): List<RestCallAction> {
-        if(target.path.toString() == this.path.toString()) return ancestors.flatMap { a -> a.actions }.plus(actions) as List<RestCallAction>
+        if(target.path.toString() == this.path.toString()) return ancestors.flatMap { a -> a.getMethods() }.plus(getMethods()) as List<RestCallAction>
         else {
             ancestors.find { it.path.toString() == target.path.toString() }?.let {
-                return it.ancestors.flatMap { a -> a.actions }.plus(it.actions) as List<RestCallAction>
+                return it.ancestors.flatMap { a -> a.getMethods() }.plus(it.getMethods()) as List<RestCallAction>
             }
         }
         return mutableListOf()
@@ -581,7 +463,7 @@ class RestResource(
 
     private fun independentPost() : RestAction? {
         if(!verbs.last()) return null
-        val post = getActionByHttpVerb(actions, HttpVerb.POST) as RestCallAction
+        val post = getActionByHttpVerb(getMethods(), HttpVerb.POST) as RestCallAction
         if(post.path.hasVariablePathParameters() &&
                 (!post.path.isLastElementAParameter()) ||
                 post.path.getVariableNames().size >= 2){
@@ -655,4 +537,154 @@ class RestResource(
     }
 
     fun getName() : String = path.toString()
+
+//    fun existDuplicateParamName() : Boolean{
+//        duplicatePathParamName?.let { return it }
+//        duplicatePathParamName = path.getVariableNames().size == path.getVariableNames().toSet().size
+//        return duplicatePathParamName!!
+//    }
+
+    fun isPartOfStaticTokens(text : String) : Boolean{
+        return tokens.any { token ->
+            token.equals(text)
+        }
+    }
+
+    fun getMethods() : List<RestAction> = actions.keys.toList()
+    fun allParamsInfoUpdate() : Boolean = actions.none { !it.value }
+
+    fun addMethod(action: RestAction){
+        actions.getOrPut(action){false}
+    }
+
+    /******************** manage param *************************/
+    fun getParamId(params: List<Param>, param : Param) : String = "${param::class.java.simpleName}:${getParamName(params, param)}"
+
+    private fun getParamName(params: List<Param>, param : Param) : String = ParamUtil.appendParam(getLastTokensOfPath(params, param), param.name)
+
+    private fun getLastTokensOfPath() : String = tokens.last().segment
+
+    fun getLastTokensOfPath(params: List<Param>, param : Param) : String {
+        if(param !is PathParam) return tokens.last().segment
+        val index = params.filter { it is PathParam && it.name == param.name}.indexOf(param)
+        return tokens.filter { it.isParameter && ComparisionUtil.compareString(it.originalText, param.name) }[index].segment
+    }
+
+    fun getSegmentLevel(params: List<Param>, param : Param): Int{
+        if(getSegments().size == 1) return 0
+        val index  = getSegments().indexOf(getLastTokensOfPath(params, param))
+        return getSegments().size -1 - index
+    }
+
+    fun getSegmentLevel(segment: String): Int{
+        if(getSegments().size == 1) return 0
+        val index  = getSegments().indexOf(segment)
+        return getSegments().size -1 - index
+    }
+
+    fun getFullTokensOfPath() : String = ParamUtil.generateParamId(path.getStaticTokens().toTypedArray())
+
+    fun getSegments() : List<String>{
+        val result = mutableListOf<String>()
+        tokens.filter { it.isParameter }.forEach {
+            if(!result.contains(it.segment)) result.add(it.segment)
+        }
+        if(result.isEmpty() && getFullTokensOfPath().isNotBlank()) result.add(getFullTokensOfPath())
+        return result
+    }
+
+    fun getRefTypes() : Set<String>{
+        return paramsInfo.filter {  it.value.referParam is BodyParam && it.value.referParam.gene is ObjectGene && (it.value.referParam.gene as ObjectGene).refType != null}.map {
+            ((it.value.referParam as BodyParam).gene as ObjectGene).refType!!
+        }.toSet()
+    }
+
+
+    fun anyParameterChanged(action : RestCallAction) : Boolean{
+        val target = getMethods().find { it.getName() == action.getName() }
+                ?: throw IllegalArgumentException("cannot find the action ${action.getName()} in the resource ${getName()}")
+        return action.parameters.size != (target as RestCallAction).parameters.size
+    }
+
+    fun updateAdditionalParams(action: RestCallAction) : Map<String, ParamInfo>?{
+        val target = (getMethods().find { it is RestCallAction && it.getName() == action.getName() }
+                ?: throw IllegalArgumentException("cannot find the action ${action.getName()} in the resource ${getName()}")) as RestCallAction
+        if(actions.getValue(target)) return null
+
+        actions.replace(target, true)
+
+        val additionParams = action.parameters.filter { p-> paramsInfo[getParamId(action.parameters, p)] == null}
+        if(additionParams.isEmpty()) return null
+        return additionParams.map { p-> Pair(getParamId(action.parameters, p), initParamInfo(action.verb, action.parameters, p)) }.toMap()
+    }
+
+    fun updateAdditionalParam(action: RestCallAction, param: Param) : ParamInfo{
+        return initParamInfo(action.verb, action.parameters, param).also { it.fromAdditionInfo = true }
+    }
+
+    private fun initParamInfo(){
+        paramsInfo.clear()
+
+        /*
+         parameter that is required to bind with post action, or row of tables
+         1) path parameter in the middle of the path, i.e., /A/{a}/B/{b}, {a} is required to bind
+         2) GET, DELETE, PATCH, PUT(-prob), if the parameter refers to "id", it is required to bind, in most case, the parameter is either PathParam or QueryParam
+         3) other parameter, it is not necessary to bind, but it helps if it is bound.
+                e.g., Request to get a list of data whose value is less than "parameter", if bind with an existing data, the requests make more sentence than a random data
+         */
+
+        if (tokens.isEmpty()) return
+        getMethods().forEach { a ->
+            if(a is RestCallAction){
+                a.parameters.forEach{p->
+                    initParamInfo(a.verb, a.parameters, p)
+                }
+            }
+        }
+    }
+
+    private fun initParamInfo(verb: HttpVerb, params: List<Param>, param: Param) : ParamInfo{
+        /*
+            in any case, PathParam is required to be bound
+         */
+        val segment = getLastTokensOfPath(params, param)
+        val key = getParamId(params,param)
+
+        val isRequiredToBind = (param is PathParam) || (param is QueryParam && param.gene !is OptionalGene)
+
+        val paramInfo = paramsInfo.getOrPut(key){
+                ParamInfo(
+                        param.name,
+                        segment,
+                        isRequiredToBind,
+                        findPathParamInPostChain(verb.toString(), param, segment),
+                        param)
+            }
+
+        if (isRequiredToBind) paramInfo.isRequiredToBind = isRequiredToBind
+
+        paramInfo.involvedAction.add(verb)
+        return paramInfo
+    }
+
+    private fun findPathParamInPostChain(verb: String, param : Param, segment: String) : Boolean{
+        return postCreation.actions.subList(0, postCreation.actions.size - (if(verb == HttpVerb.POST.toString()) 1 else 0)).reversed().any { post->
+            val ar = if((post as RestCallAction).path.toString() == path.toString()) this else ancestors.find { it.path.toString() == post.path.toString() }!!
+            post.parameters.any {postParam->
+                ParserUtil.stringSimilarityScore(ar.getLastTokensOfPath(post.parameters, postParam), segment) > 0.5
+                        &&(postParam.name == param.name ||
+                        ((postParam is BodyParam) && (postParam.gene is ObjectGene) && postParam.gene.fields.any { f-> ComparisionUtil.compareString(f.name, param.name) }))
+            }
+        }
+    }
+
+    class ParamInfo(
+            val name : String,
+            val previousSegment: String,
+            var isRequiredToBind : Boolean,
+            val hasInPostChain: Boolean,
+            val referParam : Param,
+            val involvedAction : MutableSet<HttpVerb> = mutableSetOf(),
+            var fromAdditionInfo : Boolean = false
+    )
 }
