@@ -436,13 +436,16 @@ class TestCaseWriter {
                             '{' -> {
                                 // JSON contains an object
                                 val resContents = Gson().fromJson(res.getBody(), LinkedTreeMap::class.java)
-                                resContents.keys.filter{!(it as String)
-                                        .contains("timestamp")}
+                                resContents.keys.filter{
+                                    !(it as String).contains("timestamp")}
                                         .forEach {
                                     val actualValue = resContents[it]
                                     if (actualValue != null) {
                                         val printableTh = handleFieldValues(actualValue)
-                                        if (printableTh != "null" && printableTh != "NotCoveredYet") {
+                                        if (printableTh != "null"
+                                                && printableTh != "NotCoveredYet"
+                                                && !printableTh.contains("logged")
+                                        ) {
                                             lines.add(".body(\"\'${it}\'\", ${printableTh})")
                                         }
                                     }

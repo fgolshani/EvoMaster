@@ -38,8 +38,11 @@ class TestSuiteWriter {
         val content = convertToCompilableTestCode(solution, name, controllerName)
         saveToDisk(content, config, name)
 
-        val numberMatcher = addAdditionalNumberMatcher()
-        saveToDisk(numberMatcher, config, TestSuiteFileName("NumberMatcher"))
+        if (config.enableBasicAssertions){
+            val numberMatcher = addAdditionalNumberMatcher()
+            saveToDisk(numberMatcher, config, TestSuiteFileName("NumberMatcher"))
+        }
+
     }
 
 
