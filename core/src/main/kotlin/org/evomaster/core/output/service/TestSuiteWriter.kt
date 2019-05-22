@@ -25,7 +25,7 @@ class TestSuiteWriter {
     companion object {
         private const val controller = "controller"
         private const val baseUrlOfSut = "baseUrlOfSut"
-        private const val activeExpectations = "activeExpectations"
+        private const val expectationsMasterSwitch = "expectationsMasterSwitch"
     }
 
     fun writeTests(
@@ -147,6 +147,10 @@ class TestSuiteWriter {
 
         if(config.expectationsActive) {
             addImport("org.evomaster.client.java.controller.expect.ExpectationHandler.expectationHandler", lines, true)
+            addImport("org.evomaster.client.java.controller.expect.ExpectationHandler", lines)
+            addImport("io.restassured.response.ValidatableResponse", lines)
+            addImport("io.restassured.path.json.JsonPath", lines)
+
         }
         //addImport("static org.hamcrest.core.Is.is", lines, format)
 
@@ -172,13 +176,13 @@ class TestSuiteWriter {
             lines.add("private static final SutHandler $controller = new $controllerName();")
             lines.add("private static String $baseUrlOfSut;")
             if(config.expectationsActive){
-                lines.add("private static boolean activeExpectations = false;")
+                lines.add("private static boolean expectationsMasterSwitch = false;")
             }
         } else if(config.outputFormat.isKotlin()) {
             lines.add("private val $controller : SutHandler = $controllerName()")
             lines.add("private lateinit var $baseUrlOfSut: String")
             if(config.expectationsActive){
-                lines.add("private val $activeExpectations = false")
+                lines.add("private val $expectationsMasterSwitch = false")
             }
 
         }
@@ -387,6 +391,27 @@ class TestSuiteWriter {
                             lines.indented { lines.add("return NumberMatcher(item.toDouble())") }
                         }
                         lines.add("}")
+                    }
+                }
+                lines.add("}")
+
+                //numbers match function
+                when{
+                    format.isJava() -> {
+                        lines.add("public static boolean numbersMatch(Number item1, Number item2){")
+                        lines.indented {
+                            lines.add("NumberMatcher n1 = new NumberMatcher(item1.doubleValue());")
+                            lines.add("return n1.matchesSafely(item2);")
+                        }
+                    }
+                    format.isKotlin() -> {
+                        lines.add("companion object {")
+                        lines.indented {
+                            lines.add("@JvmStatic")
+                            lines.add("fun numbersMatche(item1: Number, item2: Number): Matcher<Number> { ")
+                            lines.add("val n1: NumberMatcher = NumberMatcher(item1.toDouble())")
+                            lines.add("return n1.matchesSafely(item2)")
+                        }
                     }
                 }
                 lines.add("}")

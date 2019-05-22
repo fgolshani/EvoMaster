@@ -66,6 +66,20 @@ class TestCaseWriter {
                     usedObjects = test.test.individual.usedObjects
                 }
 
+                if(configuration.expectationsActive){
+                    lines.addEmpty()
+                    when{
+                        format.isJava() -> lines.append("ExpectationHandler expectationHandler = expectationHandler()")
+                        format.isKotlin() -> lines.append("val expectationHandler: ExpectationHandler = expectationHandler()")
+
+                    }
+                    lines.indented {
+                        lines.add(".expect(expectationsMasterSwitch)")
+                        if (format.isJava()) lines.append(";")
+                    }
+
+                }
+
 
                 if (!test.test.individual.dbInitialization.isEmpty()) {
                     handleDbInitialization(format, test.test.individual.dbInitialization, lines)
@@ -264,7 +278,18 @@ class TestCaseWriter {
                                  baseUrlOfSut: String) {
 
         //first handle the first line
-        handleFirstLine(call, lines, res)
+        val name = "call_$counter"
+
+        //
+
+
+        if(configuration.expectationsActive){
+            handleGenericFirstLine(call, lines, res, name)
+        }
+        else {
+            handleFirstLine(call, lines, res)
+        }
+
         lines.indent(2)
 
         handleHeaders(call, lines)
@@ -276,12 +301,18 @@ class TestCaseWriter {
         handleResponse(lines, res)
 
         //finally, handle the last line(s)
-        handleLastLine(call, res, lines)
+        if(configuration.expectationsActive){
+            handleGenericLastLine(call, res, lines)
+        }
+        else {
+            handleLastLine(call, res, lines)
+        }
 
         //BMR should expectations be here?
         // Having them at the end of a test makes some sense...
         if(configuration.expectationsActive){
-            handleExpectations(res, lines, true)
+            handleExpectationSpecificLines(call, lines, res, name)
+            handleExpectations(res, lines, true, name)
         }
 
 
@@ -320,6 +351,32 @@ class TestCaseWriter {
             lines.append(";")
             lines.deindent(2)
         }
+    }
+
+    private fun handleGenericFirstLine(call: RestCallAction, lines: Lines, res: RestCallResult, name: String){
+        lines.addEmpty()
+        when {
+            format.isKotlin() -> lines.append("val $name: ValidatableResponse = ")
+            format.isJava() -> lines.append("ValidatableResponse $name = ")
+        }
+        lines.append("given()" + getAcceptHeader())
+    }
+
+    private fun handleGenericLastLine(call: RestCallAction, res: RestCallResult, lines: Lines){
+        if(format.isJava()) {lines.append(";")}
+        lines.deindent(2)
+        counter++
+    }
+
+    private fun handleExpectationSpecificLines(call: RestCallAction, lines: Lines, res: RestCallResult, name: String){
+        lines.addEmpty()
+        when{
+            format.isKotlin() -> lines.add("val json_$name: JsonPath = ")
+            format.isJava() -> lines.add("JsonPath json_$name = $name")
+        }
+
+        lines.append(".extract().response().jsonPath()")
+        if(format.isJava()) {lines.append(";")}
     }
 
     private fun handleFirstLine(call: RestCallAction, lines: Lines, res: RestCallResult) {
@@ -381,16 +438,42 @@ class TestCaseWriter {
         }
     }
 
-    private fun handleFieldValues(resContentsItem: Any?): String{
+    private fun handleFieldValues(resContentsItem: Any?, ident: String, name: String): String{
         if (resContentsItem == null) {
             return "nullValue()"
         }
         else{
             when(resContentsItem::class) {
-                //Double::class -> return "anyOf(equalTo(${(Math.floor(resContentsItem as Double).toInt())}), closeTo(${(resContentsItem as Double)}, 0.1))"
+                //Double::class -> return "NumberMatcher.numberMatches(${resContentsItem as Double})"
+                Double::class -> return "NumberMatcher.numbersMatch(" +
+                        "json_$name.getJsonObject(\"$ident\"), " +
+                        "${resContentsItem as Double})"
+                //String::class -> return "containsString(\"${(resContentsItem as String).replace("\"", "\\\"").replace("\n", "\\n")}\")"
+                String::class -> return "json_$name.getJsonObject(\"$ident\").toString()" +
+                        ".matches(\"${(resContentsItem as String).replace("\"", "\\\"").replace("\n", "\\n")}\")"
+
+                //Note: checking a string can cause (has caused) problems due to unescaped quotation marks
+                // The above solution should be refined.
+                else -> return "NotCoveredYet"
+            }
+        }
+        /* BMR: the code above is due to a somewhat unfortunate problem:
+        - Gson does parses all numbers as Double
+        - Hamcrest has a hard time comparing double to int
+        This is (admittedly) a horrible hack, but it should address the issue until a more elegant solution can be found.
+        Note: it also results in an odd behaviour in the generated test: IntelliJ will complain, but the test is executable.
+        * */
+    }
+
+    private fun handleFieldValuesAssert(resContentsItem: Any?): String{
+        if (resContentsItem == null) {
+            return "nullValue()"
+        }
+        else{
+            when(resContentsItem::class) {
                 Double::class -> return "NumberMatcher.numberMatches(${resContentsItem as Double})"
                 String::class -> return "containsString(\"${(resContentsItem as String).replace("\"", "\\\"").replace("\n", "\\n")}\")"
-                //Note: checking a string can cause (has caused) problems due to unescaped quotation marks
+                 //Note: checking a string can cause (has caused) problems due to unescaped quotation marks
                 // The above solution should be refined.
                 else -> return "NotCoveredYet"
             }
@@ -441,7 +524,7 @@ class TestCaseWriter {
                                         .forEach {
                                     val actualValue = resContents[it]
                                     if (actualValue != null) {
-                                        val printableTh = handleFieldValues(actualValue)
+                                        val printableTh = handleFieldValuesAssert(actualValue)
                                         if (printableTh != "null" && printableTh != "NotCoveredYet") {
                                             lines.add(".body(\"\'${it}\'\", ${printableTh})")
                                         }
@@ -553,7 +636,7 @@ class TestCaseWriter {
         return ".accept(\"*/*\")"
     }
 
-    private fun handleExpectations(result: RestCallResult, lines: Lines, active: Boolean){
+    private fun handleExpectations(result: RestCallResult, lines: Lines, active: Boolean, name: String){
 
         /*
         TODO: This is a WiP to show the basic idea of the expectations:
@@ -566,22 +649,33 @@ class TestCaseWriter {
         As it is still work in progress, expect quite significant changes to this.
         */
 
-        lines.add("expectationHandler()")
+        /*lines.add("expectationHandler()")
         lines.indented {
             lines.add(".expect()")
             //lines.add(".that(activeExpectations, true)")
             //lines.add(".that(activeExpectations, false)")
             if(configuration.enableCompleteObjects == false){
-                addExpectationsWithoutObjects(result, lines)
+                addExpectationsWithoutObjects(result, lines, name)
             }
             lines.append(when {
                 format.isJava() -> ";"
                 else -> ""
             })
+        }*/
+
+        //Insert basic expectations
+        lines.add("expectationHandler.expect()") // this is a bit idle. Perhaps find a nicer way.
+        lines.indented {
+            addExpectationsWithoutObjects(result, lines, name)
         }
+        lines.append(when {
+            format.isJava() -> ";"
+            else -> ""
+        })
+
     }
 
-    private fun addExpectationsWithoutObjects(result: RestCallResult, lines: Lines){
+    private fun addExpectationsWithoutObjects(result: RestCallResult, lines: Lines, name: String){
         if(result.getBodyType() != null){
             // if there is a body, add expectations based on the body type. Right now only application/json is supported
             when(result.getBodyType().toString()){
@@ -596,11 +690,10 @@ class TestCaseWriter {
                             val resContents = Gson().fromJson(result.getBody(), Object::class.java)
 
                             (resContents as LinkedTreeMap<*, *>).keys.forEach {
-                                val printableTh = handleFieldValues(resContents[it]!!)
+                                val printableTh = handleFieldValues(resContents[it], it.toString(), name)
                                 if(printableTh != "null" && printableTh != "NotCoveredYet"){
-                                    //lines.add(".body(\"${it}\", ${printableTh})")
-                                    //lines.add(".that(activeExpectations, (\"${it}\".${printableTh}))")
-                                    lines.add(".that(activeExpectations, (\"${it}\" == \"${resContents[it]}\"))")
+                                    //lines.add(".that(expectationsMasterSwitch, (\"${it}\" == \"${resContents[it]}\"))")
+                                    lines.add(".that(expectationsMasterSwitch, ($printableTh))")
                                 }
                             }
                         }
